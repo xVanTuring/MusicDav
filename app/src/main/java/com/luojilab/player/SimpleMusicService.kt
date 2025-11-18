@@ -1,4 +1,4 @@
-package com.luojilab.player
+package com.spotify.music
 
 import android.app.PendingIntent
 import android.content.Intent

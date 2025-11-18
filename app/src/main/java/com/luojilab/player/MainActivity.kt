@@ -1,4 +1,4 @@
-package com.luojilab.player
+package com.spotify.music
 
 import android.Manifest
 import android.content.ComponentName
@@ -39,7 +39,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import com.luojilab.player.ui.theme.LuojiTheme
+import com.spotify.music.ui.theme.LuojiTheme
 import java.util.concurrent.atomic.AtomicReference
 
 class MainActivity : ComponentActivity() {

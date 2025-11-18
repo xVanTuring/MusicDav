@@ -1,4 +1,4 @@
-package com.luojilab.player.ui.theme
+package com.spotify.music.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle

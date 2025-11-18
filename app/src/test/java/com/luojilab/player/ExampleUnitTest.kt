@@ -1,4 +1,4 @@
-package com.luojilab.player
+package com.spotify.music
 
 import org.junit.Test
 

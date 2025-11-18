@@ -1,4 +1,4 @@
-package com.luojilab.player.ui.theme
+package com.spotify.music.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

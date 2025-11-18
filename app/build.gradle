@@ -5,13 +5,13 @@ plugins {
 }
 
 android {
-    namespace 'com.luojilab.player'
+    namespace 'com.spotify.music'
     compileSdk {
         version = release(36)
     }
 
     defaultConfig {
-        applicationId "com.luojilab.player"
+        applicationId "com.spotify.music"
         minSdk 24
         targetSdk 36
         versionCode 1
