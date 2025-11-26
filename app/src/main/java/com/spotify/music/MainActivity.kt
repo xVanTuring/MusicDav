@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -91,6 +92,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     } else {
         MusicPlayerScreen(
             webDavConfig = selectedAlbum!!.config,
+            onBack = { selectedAlbum = null },
             modifier = modifier
         )
     }
@@ -131,14 +133,27 @@ fun AlbumListScreen(
                     verticalArrangement = Arrangement.Top
                 ) {
                     albums.forEach { album ->
-                        androidx.compose.material3.Button(
-                            onClick = { onSelect(album) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                        ) {
-                            androidx.compose.material3.Text(album.name)
+                        androidx.compose.material3.Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                            .clickable { onSelect(album) },
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        androidx.compose.foundation.layout.Column(modifier = Modifier.padding(16.dp)) {
+                            androidx.compose.material3.Text(
+                                text = album.name,
+                                style = androidx.compose.material3.MaterialTheme.typography.titleMedium
+                            )
+                            androidx.compose.material3.Text(
+                                text = album.config.url,
+                                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
+                    }
                     }
                     androidx.compose.material3.Button(
                         onClick = { creating = true },
@@ -274,6 +289,7 @@ fun AlbumCreateForm(
 @Composable
 fun MusicPlayerScreen(
     webDavConfig: WebDavConfig,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -413,6 +429,8 @@ fun MusicPlayerScreen(
 
     MusicListScreen(
         webDavConfig = webDavConfig,
+        showBack = true,
+        onBack = onBack,
         currentPlayingIndex = playlistState.currentIndex,
         onPlaylistLoaded = { songs ->
             loadPlaylist(songs)

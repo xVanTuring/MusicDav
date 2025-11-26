@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,6 +47,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun MusicListScreen(
     webDavConfig: WebDavConfig,
+    showBack: Boolean = false,
+    onBack: () -> Unit = {},
     currentPlayingIndex: Int,
     onSongSelected: (Int, MusicFile) -> Unit,
     onPlaylistLoaded: (List<MusicFile>) -> Unit = {},
@@ -89,6 +92,15 @@ fun MusicListScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Music Library") },
+                navigationIcon = if (showBack) {
+                    {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                } else {
+                    {}
+                },
                 actions = {
                     IconButton(onClick = { loadMusicFiles() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
