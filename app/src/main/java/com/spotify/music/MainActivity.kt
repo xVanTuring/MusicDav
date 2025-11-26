@@ -13,6 +13,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,19 +21,26 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -59,6 +67,9 @@ fun PlayerScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var uiState by remember { mutableStateOf(PlayerUiState()) }
+    var currentPosition by remember { mutableLongStateOf(0L) }
+    var duration by remember { mutableLongStateOf(0L) }
+    var isSeeking by remember { mutableStateOf(false) }
     val needsNotificationPermission = remember {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     }
@@ -119,10 +130,19 @@ fun PlayerScreen(modifier: Modifier = Modifier) {
                         val subtitle = mediaMetadata.artist?.toString() ?: uiState.subtitle
                         uiState = uiState.copy(title = title, subtitle = subtitle)
                     }
+
+                    override fun onEvents(player: Player, events: Player.Events) {
+                        if (events.contains(Player.EVENT_TIMELINE_CHANGED) ||
+                            events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+                            duration = player.duration.takeIf { it > 0 } ?: 0L
+                        }
+                    }
                 }
                 listenerRef.set(listener)
                 mediaController.addListener(listener)
                 val metadata = mediaController.mediaMetadata
+                duration = mediaController.duration.takeIf { it > 0 } ?: 0L
+                currentPosition = mediaController.currentPosition
                 uiState = uiState.copy(
                     title = metadata.title?.toString() ?: uiState.title,
                     subtitle = metadata.artist?.toString() ?: uiState.subtitle,
@@ -141,9 +161,30 @@ fun PlayerScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    LaunchedEffect(controller) {
+        while (isActive) {
+            controller?.let {
+                if (!isSeeking) {
+                    currentPosition = it.currentPosition
+                    if (duration <= 0) {
+                        duration = it.duration.takeIf { d -> d > 0 } ?: 0L
+                    }
+                }
+            }
+            delay(100)
+        }
+    }
+
     PlayerContent(
         modifier = modifier,
         uiState = uiState,
+        currentPosition = currentPosition,
+        duration = duration,
+        onSeekStart = { isSeeking = true },
+        onSeekEnd = { position ->
+            isSeeking = false
+            controller?.seekTo(position)
+        },
         onPlayClicked = {
             if (needsNotificationPermission && !notificationGranted) {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -171,6 +212,10 @@ fun PlayerScreen(modifier: Modifier = Modifier) {
 @Composable
 private fun PlayerContent(
     uiState: PlayerUiState,
+    currentPosition: Long,
+    duration: Long,
+    onSeekStart: () -> Unit,
+    onSeekEnd: (Long) -> Unit,
     modifier: Modifier = Modifier,
     onPlayClicked: () -> Unit,
     onPauseClicked: () -> Unit,
@@ -178,6 +223,14 @@ private fun PlayerContent(
     notificationGranted: Boolean,
     onRequestNotificationPermission: () -> Unit
 ) {
+    var sliderPosition by remember { mutableFloatStateOf(0f) }
+    var isUserSeeking by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentPosition, duration) {
+        if (!isUserSeeking && duration > 0) {
+            sliderPosition = currentPosition.toFloat()
+        }
+    }
     Column(
         modifier = modifier.padding(24.dp),
         verticalArrangement = Arrangement.Center
@@ -192,6 +245,39 @@ private fun PlayerContent(
             ) {
                 Text(text = uiState.title, style = MaterialTheme.typography.headlineSmall)
                 Text(text = uiState.subtitle, style = MaterialTheme.typography.bodyMedium)
+                
+                if (duration > 0) {
+                    Column(modifier = Modifier.padding(top = 16.dp)) {
+                        Slider(
+                            value = sliderPosition,
+                            onValueChange = { value ->
+                                isUserSeeking = true
+                                sliderPosition = value
+                            },
+                            onValueChangeFinished = {
+                                isUserSeeking = false
+                                onSeekStart()
+                                onSeekEnd(sliderPosition.toLong())
+                            },
+                            valueRange = 0f..duration.toFloat(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = formatTime(if (isUserSeeking) sliderPosition.toLong() else currentPosition),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = formatTime(duration),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+                
                 if (uiState.isBuffering) {
                     CircularProgressIndicator(modifier = Modifier.padding(top = 8.dp))
                 }
@@ -259,3 +345,10 @@ data class PlayerUiState(
     val isBuffering: Boolean = false,
     val errorMessage: String? = null
 )
+
+private fun formatTime(timeMs: Long): String {
+    val totalSeconds = timeMs / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
+}
