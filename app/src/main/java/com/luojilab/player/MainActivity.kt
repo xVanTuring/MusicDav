@@ -39,7 +39,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import com.spotify.music.ui.theme.LuojiTheme
+import com.spotify.music.ui.theme.MusicDavTheme
 import java.util.concurrent.atomic.AtomicReference
 
 class MainActivity : ComponentActivity() {
@@ -47,7 +47,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            LuojiTheme {
+            MusicDavTheme {
                 PlayerScreen(modifier = Modifier.fillMaxSize())
             }
         }
@@ -253,7 +253,7 @@ private fun ensureServiceStarted(context: android.content.Context) {
 }
 
 data class PlayerUiState(
-    val title: String = "Luoji 示例音频",
+    val title: String = "MusicDav 示例音频",
     val subtitle: String = "固定内置 mp3 资源",
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,

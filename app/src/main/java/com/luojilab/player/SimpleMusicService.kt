@@ -24,7 +24,7 @@ class SimpleMusicService : MediaSessionService() {
             .build()
             .apply {
                 val trackMetadata = MediaMetadata.Builder()
-                    .setTitle("Luoji 演示音频")
+                    .setTitle("MusicDav 演示音频")
                     .setArtist("内置示例")
                     .build()
                 val mediaItem = MediaItem.Builder()
