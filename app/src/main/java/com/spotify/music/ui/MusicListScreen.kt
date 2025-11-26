@@ -47,6 +47,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun MusicListScreen(
     webDavConfig: WebDavConfig,
+    directoryPath: String? = null,
     showBack: Boolean = false,
     onBack: () -> Unit = {},
     currentPlayingIndex: Int,
@@ -62,11 +63,20 @@ fun MusicListScreen(
     val scope = rememberCoroutineScope()
     val webDavClient = remember { WebDavClient() }
     
+    // 如果有 directoryPath，拼接完整路径；否则使用原始 URL
+    val effectiveConfig = remember(webDavConfig, directoryPath) {
+        if (directoryPath != null) {
+            webDavConfig.copy(url = directoryPath)
+        } else {
+            webDavConfig
+        }
+    }
+    
     fun loadMusicFiles() {
         isLoading = true
         errorMessage = null
         scope.launch {
-            webDavClient.fetchMusicFiles(webDavConfig)
+            webDavClient.fetchMusicFiles(effectiveConfig)
                 .onSuccess { files ->
                     musicFiles = files
                     isLoading = false
@@ -78,7 +88,7 @@ fun MusicListScreen(
         }
     }
     
-    LaunchedEffect(webDavConfig) {
+    LaunchedEffect(effectiveConfig) {
         loadMusicFiles()
     }
     

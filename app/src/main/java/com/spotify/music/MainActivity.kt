@@ -18,6 +18,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Traffic
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -80,18 +83,22 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
         AlbumListScreen(
             albums = albums,
             onSelect = { selectedAlbum = it },
-            onCreate = { name, config ->
-                val newAlbum = com.spotify.music.data.Album(name, config)
-                val updated = albums + newAlbum
+            onCreate = { album ->
+                val updated = albums + album
                 albums = updated
                 com.spotify.music.data.AlbumsRepository.save(context, updated)
-                selectedAlbum = newAlbum
+                selectedAlbum = album
+            },
+            onDelete = { album ->
+                val updated = albums.filterNot { it.name == album.name && it.config.url == album.config.url }
+                albums = updated
+                com.spotify.music.data.AlbumsRepository.save(context, updated)
             },
             modifier = modifier
         )
     } else {
         MusicPlayerScreen(
-            webDavConfig = selectedAlbum!!.config,
+            album = selectedAlbum!!,
             onBack = { selectedAlbum = null },
             modifier = modifier
         )
@@ -103,9 +110,11 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
 fun AlbumListScreen(
     albums: List<com.spotify.music.data.Album>,
     onSelect: (com.spotify.music.data.Album) -> Unit,
-    onCreate: (String, com.spotify.music.data.WebDavConfig) -> Unit,
+    onCreate: (com.spotify.music.data.Album) -> Unit,
+    onDelete: (com.spotify.music.data.Album) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var creating by remember { mutableStateOf(false) }
     androidx.compose.material3.Scaffold(
         topBar = { androidx.compose.material3.TopAppBar(title = { androidx.compose.material3.Text("Albums") }) },
@@ -119,9 +128,15 @@ fun AlbumListScreen(
             if (creating) {
                 AlbumCreateForm(
                     onCancel = { creating = false },
-                    onSave = { name, url, username, password ->
+                    onSave = { name, url, username, password, directoryUrl, coverImageBase64 ->
                         val config = com.spotify.music.data.WebDavConfig(url = url, username = username, password = password)
-                        onCreate(name, config)
+                        val album = com.spotify.music.data.Album(
+                            name = name,
+                            config = config,
+                            directoryUrl = directoryUrl,
+                            coverImageBase64 = coverImageBase64
+                        )
+                        onCreate(album)
                         creating = false
                     }
                 )
@@ -134,26 +149,43 @@ fun AlbumListScreen(
                 ) {
                     albums.forEach { album ->
                         androidx.compose.material3.Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .clickable { onSelect(album) },
-                        colors = androidx.compose.material3.CardDefaults.cardColors(
-                            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        androidx.compose.foundation.layout.Column(modifier = Modifier.padding(16.dp)) {
-                            androidx.compose.material3.Text(
-                                text = album.name,
-                                style = androidx.compose.material3.MaterialTheme.typography.titleMedium
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                                .clickable { onSelect(album) },
+                            colors = androidx.compose.material3.CardDefaults.cardColors(
+                                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant
                             )
-                            androidx.compose.material3.Text(
-                                text = album.config.url,
-                                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        ) {
+                            androidx.compose.foundation.layout.Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                androidx.compose.foundation.layout.Column(
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    androidx.compose.material3.Text(
+                                        text = album.name,
+                                        style = androidx.compose.material3.MaterialTheme.typography.titleMedium
+                                    )
+                                    androidx.compose.material3.Text(
+                                        text = album.directoryUrl ?: album.config.url,
+                                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                androidx.compose.material3.IconButton(
+                                    onClick = { onDelete(album) }
+                                ) {
+                                    androidx.compose.material3.Icon(
+                                        imageVector = androidx.compose.material.icons.Icons.Default.Traffic,
+                                        contentDescription = "Delete Album"
+                                    )
+                                }
+                            }
                         }
-                    }
                     }
                     androidx.compose.material3.Button(
                         onClick = { creating = true },
@@ -172,7 +204,7 @@ fun AlbumListScreen(
 @Composable
 fun AlbumCreateForm(
     onCancel: () -> Unit,
-    onSave: (name: String, url: String, username: String, password: String) -> Unit
+    onSave: (name: String, url: String, username: String, password: String, directoryUrl: String?, coverImageBase64: String?) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
@@ -182,7 +214,12 @@ fun AlbumCreateForm(
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var submitCounter by remember { mutableStateOf(0) }
+    var directoryUrl by remember { mutableStateOf<String?>(null) }
+    var directoryPickerVisible by remember { mutableStateOf(false) }
+    var directories by remember { mutableStateOf<List<com.thegrizzlylabs.sardineandroid.DavResource>>(emptyList()) }
+    var isDirectoryLoading by remember { mutableStateOf(false) }
     val webDavClient = remember { com.spotify.music.webdav.WebDavClient() }
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -205,7 +242,7 @@ fun AlbumCreateForm(
         )
         androidx.compose.material3.OutlinedTextField(
             value = url,
-            onValueChange = { url = it; errorMessage = null },
+            onValueChange = { url = it; errorMessage = null; directoryUrl = null },
             label = { androidx.compose.material3.Text("WebDAV URL") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
@@ -237,6 +274,13 @@ fun AlbumCreateForm(
                 modifier = Modifier.padding(top = 8.dp)
             )
         }
+        if (directoryUrl != null) {
+            androidx.compose.material3.Text(
+                text = "Selected folder: $directoryUrl",
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -249,8 +293,43 @@ fun AlbumCreateForm(
             ) { androidx.compose.material3.Text("Cancel") }
             androidx.compose.material3.Button(
                 onClick = {
+                    if (url.isBlank() || username.isBlank() || password.isBlank()) {
+                        errorMessage = "Please fill in URL, username and password"
+                        return@Button
+                    }
+                    isDirectoryLoading = true
+                    errorMessage = null
+                    val config = com.spotify.music.data.WebDavConfig(url, username, password)
+                    coroutineScope.launch {
+                        webDavClient.listDirectories(config)
+                            .onSuccess { list ->
+                                directories = list
+                                directoryPickerVisible = true
+                            }
+                            .onFailure { e ->
+                                errorMessage = "Failed to load directories: ${e.message}"
+                            }
+                        isDirectoryLoading = false
+                    }
+                },
+                enabled = !isLoading && !isDirectoryLoading
+            ) {
+                if (isDirectoryLoading) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.padding(end = 8.dp),
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                androidx.compose.material3.Text("Choose Folder")
+            }
+            androidx.compose.material3.Button(
+                onClick = {
                     if (name.isBlank() || url.isBlank() || username.isBlank() || password.isBlank()) {
                         errorMessage = "Please fill in all fields"
+                        return@Button
+                    }
+                    if (directoryUrl == null) {
+                        errorMessage = "Please choose a folder"
                         return@Button
                     }
                     isLoading = true
@@ -273,10 +352,21 @@ fun AlbumCreateForm(
     androidx.compose.runtime.LaunchedEffect(submitCounter) {
         if (submitCounter > 0) {
             val config = com.spotify.music.data.WebDavConfig(url, username, password)
+            val targetUrl = directoryUrl ?: url
             webDavClient.testConnection(config)
                 .onSuccess {
+                    val coverResult = webDavClient.findCoverImage(config, targetUrl)
+                    val coverBytes = coverResult.getOrNull()
+                    val coverBase64 = coverBytes?.let { bytes ->
+                        android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
+                    }
                     isLoading = false
-                    onSave(name, url, username, password)
+                    if (name.isBlank()) {
+                        val folderName = targetUrl.trimEnd('/').substringAfterLast('/')
+                        onSave(folderName, url, username, password, targetUrl, coverBase64)
+                    } else {
+                        onSave(name, url, username, password, targetUrl, coverBase64)
+                    }
                 }
                 .onFailure { e ->
                     isLoading = false
@@ -284,17 +374,46 @@ fun AlbumCreateForm(
                 }
         }
     }
-}
 
+    if (directoryPickerVisible) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { directoryPickerVisible = false },
+            confirmButton = {},
+            title = { androidx.compose.material3.Text("Choose Folder") },
+            text = {
+                androidx.compose.foundation.lazy.LazyColumn {
+                    items(directories.size) { index ->
+                        val dir = directories[index]
+                        val displayName = dir.name.ifBlank { dir.path }
+                        androidx.compose.material3.ListItem(
+                            headlineContent = { androidx.compose.material3.Text(displayName) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    directoryUrl = (url.trimEnd('/') + "/" + dir.name.trim('/')).trimEnd('/')
+                                    if (name.isBlank()) {
+                                        name = dir.name.trim('/')
+                                    }
+                                    directoryPickerVisible = false
+                                }
+                        )
+                    }
+                }
+            }
+        )
+    }
+}
 @Composable
 fun MusicPlayerScreen(
-    webDavConfig: WebDavConfig,
+    album: com.spotify.music.data.Album,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var playlistState by remember { mutableStateOf(PlaylistState()) }
+    
+    val webDavConfig = album.config
     
     // Set WebDAV credentials for the service - will dynamically update if service is already running
     LaunchedEffect(webDavConfig) {
@@ -429,6 +548,7 @@ fun MusicPlayerScreen(
 
     MusicListScreen(
         webDavConfig = webDavConfig,
+        directoryPath = album.directoryUrl,
         showBack = true,
         onBack = onBack,
         currentPlayingIndex = playlistState.currentIndex,

@@ -32,13 +32,15 @@ data class PlaylistState(
 }
 
 // Album configuration for a playlist
-data class Album(
+ data class Album(
     val name: String,
-    val config: WebDavConfig
+    val config: WebDavConfig,
+    val directoryUrl: String? = null,
+    val coverImageBase64: String? = null
 )
 
 // Simple persistence for albums using SharedPreferences and JSON
-object AlbumsRepository {
+ object AlbumsRepository {
     private const val PREF_NAME = "albums_prefs"
     private const val KEY_ALBUMS = "albums_json"
 
@@ -63,7 +65,16 @@ object AlbumsRepository {
             val url = cfg.optString("url", "")
             val username = cfg.optString("username", "")
             val password = cfg.optString("password", "")
-            result.add(Album(name = name, config = WebDavConfig(url, username, password)))
+            val directoryUrl = if (obj.has("directoryUrl")) obj.optString("directoryUrl", null) else null
+            val coverBase64 = if (obj.has("coverImageBase64")) obj.optString("coverImageBase64", null) else null
+            result.add(
+                Album(
+                    name = name,
+                    config = WebDavConfig(url, username, password),
+                    directoryUrl = directoryUrl,
+                    coverImageBase64 = coverBase64
+                )
+            )
         }
         return result
     }
@@ -78,6 +89,8 @@ object AlbumsRepository {
             cfg.put("username", album.config.username)
             cfg.put("password", album.config.password)
             obj.put("config", cfg)
+            obj.put("directoryUrl", album.directoryUrl)
+            obj.put("coverImageBase64", album.coverImageBase64)
             arr.put(obj)
         }
         return arr.toString()
