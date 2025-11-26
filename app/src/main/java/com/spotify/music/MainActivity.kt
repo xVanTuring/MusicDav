@@ -42,11 +42,18 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import androidx.core.content.ContextCompat
+import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.spotify.music.data.MusicFile
+import com.spotify.music.data.PlaylistState
+import com.spotify.music.data.WebDavConfig
+import com.spotify.music.ui.BottomPlayerBar
+import com.spotify.music.ui.LoginScreen
+import com.spotify.music.ui.MusicListScreen
 import com.spotify.music.ui.theme.MusicDavTheme
 import java.util.concurrent.atomic.AtomicReference
 
@@ -56,20 +63,49 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MusicDavTheme {
-                PlayerScreen(modifier = Modifier.fillMaxSize())
+                MusicPlayerApp(modifier = Modifier.fillMaxSize())
             }
         }
     }
 }
 
 @Composable
-fun PlayerScreen(modifier: Modifier = Modifier) {
+fun MusicPlayerApp(modifier: Modifier = Modifier) {
+    var webDavConfig by remember { mutableStateOf<WebDavConfig?>(null) }
+    var isLoggedIn by remember { mutableStateOf(false) }
+    
+    if (!isLoggedIn) {
+        LoginScreen(
+            onLoginSuccess = { config ->
+                webDavConfig = config
+                isLoggedIn = true
+            },
+            modifier = modifier
+        )
+    } else {
+        webDavConfig?.let { config ->
+            MusicPlayerScreen(
+                webDavConfig = config,
+                modifier = modifier
+            )
+        }
+    }
+}
+
+@Composable
+fun MusicPlayerScreen(
+    webDavConfig: WebDavConfig,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     var controller by remember { mutableStateOf<MediaController?>(null) }
-    var uiState by remember { mutableStateOf(PlayerUiState()) }
-    var currentPosition by remember { mutableLongStateOf(0L) }
-    var duration by remember { mutableLongStateOf(0L) }
-    var isSeeking by remember { mutableStateOf(false) }
+    var playlistState by remember { mutableStateOf(PlaylistState()) }
+    
+    // Set WebDAV credentials for the service - will dynamically update if service is already running
+    LaunchedEffect(webDavConfig) {
+        SimpleMusicService.setCredentials(webDavConfig.username, webDavConfig.password)
+    }
+    
     val needsNotificationPermission = remember {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     }
@@ -107,49 +143,49 @@ fun PlayerScreen(modifier: Modifier = Modifier) {
             try {
                 val mediaController = controllerFuture.get()
                 controller = mediaController
+                
                 val listener = object : Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
-                        uiState = uiState.copy(isPlaying = isPlaying, errorMessage = null)
+                        playlistState = playlistState.copy(isPlaying = isPlaying)
                     }
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
-                        val buffering = playbackState == Player.STATE_BUFFERING
-                        val ended = playbackState == Player.STATE_ENDED
-                        uiState = uiState.copy(
-                            isBuffering = buffering,
-                            isPlaying = if (ended) false else uiState.isPlaying
-                        )
+                        // Handle playback state changes
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
-                        uiState = uiState.copy(errorMessage = error.errorCodeName)
+                        // Handle errors
                     }
 
                     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
-                        val title = mediaMetadata.title?.toString() ?: uiState.title
-                        val subtitle = mediaMetadata.artist?.toString() ?: uiState.subtitle
-                        uiState = uiState.copy(title = title, subtitle = subtitle)
+                        // Metadata updated
                     }
 
                     override fun onEvents(player: Player, events: Player.Events) {
                         if (events.contains(Player.EVENT_TIMELINE_CHANGED) ||
                             events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
-                            duration = player.duration.takeIf { it > 0 } ?: 0L
+                            val duration = player.duration.takeIf { it > 0 } ?: 0L
+                            val currentIndex = player.currentMediaItemIndex
+                            playlistState = playlistState.copy(
+                                duration = duration,
+                                currentIndex = currentIndex
+                            )
                         }
                     }
                 }
                 listenerRef.set(listener)
                 mediaController.addListener(listener)
-                val metadata = mediaController.mediaMetadata
-                duration = mediaController.duration.takeIf { it > 0 } ?: 0L
-                currentPosition = mediaController.currentPosition
-                uiState = uiState.copy(
-                    title = metadata.title?.toString() ?: uiState.title,
-                    subtitle = metadata.artist?.toString() ?: uiState.subtitle,
-                    isPlaying = mediaController.isPlaying
+                
+                val duration = mediaController.duration.takeIf { it > 0 } ?: 0L
+                val currentPosition = mediaController.currentPosition
+                playlistState = playlistState.copy(
+                    duration = duration,
+                    currentPosition = currentPosition,
+                    isPlaying = mediaController.isPlaying,
+                    currentIndex = mediaController.currentMediaItemIndex
                 )
             } catch (error: Exception) {
-                uiState = uiState.copy(errorMessage = error.message)
+                // Handle error
             }
         }, mainExecutor)
 
@@ -164,191 +200,71 @@ fun PlayerScreen(modifier: Modifier = Modifier) {
     LaunchedEffect(controller) {
         while (isActive) {
             controller?.let {
-                if (!isSeeking) {
-                    currentPosition = it.currentPosition
-                    if (duration <= 0) {
-                        duration = it.duration.takeIf { d -> d > 0 } ?: 0L
-                    }
-                }
+                val currentPosition = it.currentPosition
+                val duration = it.duration.takeIf { d -> d > 0 } ?: 0L
+                playlistState = playlistState.copy(
+                    currentPosition = currentPosition,
+                    duration = duration
+                )
             }
             delay(100)
         }
     }
-
-    PlayerContent(
-        modifier = modifier,
-        uiState = uiState,
-        currentPosition = currentPosition,
-        duration = duration,
-        onSeekStart = { isSeeking = true },
-        onSeekEnd = { position ->
-            isSeeking = false
-            controller?.seekTo(position)
-        },
-        onPlayClicked = {
-            if (needsNotificationPermission && !notificationGranted) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            } else {
-                ensureServiceStarted(context)
-                controller?.play()
-            }
-        },
-        onPauseClicked = {
-            controller?.pause()
-        },
-        onStopClicked = {
-            controller?.stop()
-            controller?.seekToDefaultPosition()
-        },
-        notificationGranted = notificationGranted,
-        onRequestNotificationPermission = {
-            if (needsNotificationPermission) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
+    
+    fun loadPlaylist(songs: List<MusicFile>) {
+        playlistState = playlistState.copy(songs = songs)
+        
+        // Create media items for all songs
+        val mediaItems = songs.map { song ->
+            MediaItem.Builder()
+                .setUri(song.url)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(song.name.substringBeforeLast('.'))
+                        .build()
+                )
+                .build()
         }
-    )
-}
-
-@Composable
-private fun PlayerContent(
-    uiState: PlayerUiState,
-    currentPosition: Long,
-    duration: Long,
-    onSeekStart: () -> Unit,
-    onSeekEnd: (Long) -> Unit,
-    modifier: Modifier = Modifier,
-    onPlayClicked: () -> Unit,
-    onPauseClicked: () -> Unit,
-    onStopClicked: () -> Unit,
-    notificationGranted: Boolean,
-    onRequestNotificationPermission: () -> Unit
-) {
-    var sliderPosition by remember { mutableFloatStateOf(0f) }
-    var isUserSeeking by remember { mutableStateOf(false) }
-
-    LaunchedEffect(currentPosition, duration) {
-        if (!isUserSeeking && duration > 0) {
-            sliderPosition = currentPosition.toFloat()
+        
+        controller?.apply {
+            setMediaItems(mediaItems)
+            prepare()
         }
     }
-    Column(
-        modifier = modifier.padding(24.dp),
-        verticalArrangement = Arrangement.Center
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(text = uiState.title, style = MaterialTheme.typography.headlineSmall)
-                Text(text = uiState.subtitle, style = MaterialTheme.typography.bodyMedium)
-                
-                if (duration > 0) {
-                    Column(modifier = Modifier.padding(top = 16.dp)) {
-                        Slider(
-                            value = sliderPosition,
-                            onValueChange = { value ->
-                                isUserSeeking = true
-                                sliderPosition = value
-                            },
-                            onValueChangeFinished = {
-                                isUserSeeking = false
-                                onSeekStart()
-                                onSeekEnd(sliderPosition.toLong())
-                            },
-                            valueRange = 0f..duration.toFloat(),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = formatTime(if (isUserSeeking) sliderPosition.toLong() else currentPosition),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Text(
-                                text = formatTime(duration),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
+
+    MusicListScreen(
+        webDavConfig = webDavConfig,
+        currentPlayingIndex = playlistState.currentIndex,
+        onPlaylistLoaded = { songs ->
+            loadPlaylist(songs)
+        },
+        onSongSelected = { index, song ->
+            controller?.apply {
+                seekToDefaultPosition(index)
+                play()
+            }
+        },
+        bottomBar = {
+            BottomPlayerBar(
+                playlistState = playlistState,
+                onPlayPause = {
+                    controller?.let {
+                        if (it.isPlaying) it.pause() else it.play()
                     }
+                },
+                onNext = {
+                    controller?.seekToNext()
+                },
+                onPrevious = {
+                    controller?.seekToPrevious()
                 }
-                
-                if (uiState.isBuffering) {
-                    CircularProgressIndicator(modifier = Modifier.padding(top = 8.dp))
-                }
-                if (uiState.errorMessage != null) {
-                    Text(
-                        text = "播放出错：${uiState.errorMessage}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                enabled = notificationGranted,
-                onClick = { if (uiState.isPlaying) onPauseClicked() else onPlayClicked() }
-            ) {
-                Text(if (uiState.isPlaying) "暂停播放" else "播放示例")
-            }
-
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onStopClicked
-            ) {
-                Text("停止并复位")
-            }
-
-            if (!notificationGranted) {
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onRequestNotificationPermission
-                ) {
-                    Text("授予通知权限以启用系统控件")
-                }
-            }
-        }
-
-        Text(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp),
-            text = "该播放器使用单一 MediaSession 管理示例 MP3 资源，可通过系统媒体控件统一控制。",
-            style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center
-        )
-    }
+            )
+        },
+        modifier = modifier
+    )
 }
 
 private fun ensureServiceStarted(context: android.content.Context) {
     val intent = Intent(context, SimpleMusicService::class.java)
     ContextCompat.startForegroundService(context, intent)
-}
-
-data class PlayerUiState(
-    val title: String = "MusicDav 示例音频",
-    val subtitle: String = "固定内置 mp3 资源",
-    val isPlaying: Boolean = false,
-    val isBuffering: Boolean = false,
-    val errorMessage: String? = null
-)
-
-private fun formatTime(timeMs: Long): String {
-    val totalSeconds = timeMs / 1000
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%d:%02d".format(minutes, seconds)
 }
