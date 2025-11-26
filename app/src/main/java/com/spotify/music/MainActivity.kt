@@ -71,23 +71,202 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MusicPlayerApp(modifier: Modifier = Modifier) {
-    var webDavConfig by remember { mutableStateOf<WebDavConfig?>(null) }
-    var isLoggedIn by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var albums by remember { mutableStateOf(com.spotify.music.data.AlbumsRepository.load(context)) }
+    var selectedAlbum by remember { mutableStateOf<com.spotify.music.data.Album?>(null) }
     
-    if (!isLoggedIn) {
-        LoginScreen(
-            onLoginSuccess = { config ->
-                webDavConfig = config
-                isLoggedIn = true
+    if (selectedAlbum == null) {
+        AlbumListScreen(
+            albums = albums,
+            onSelect = { selectedAlbum = it },
+            onCreate = { name, config ->
+                val newAlbum = com.spotify.music.data.Album(name, config)
+                val updated = albums + newAlbum
+                albums = updated
+                com.spotify.music.data.AlbumsRepository.save(context, updated)
+                selectedAlbum = newAlbum
             },
             modifier = modifier
         )
     } else {
-        webDavConfig?.let { config ->
-            MusicPlayerScreen(
-                webDavConfig = config,
-                modifier = modifier
+        MusicPlayerScreen(
+            webDavConfig = selectedAlbum!!.config,
+            modifier = modifier
+        )
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun AlbumListScreen(
+    albums: List<com.spotify.music.data.Album>,
+    onSelect: (com.spotify.music.data.Album) -> Unit,
+    onCreate: (String, com.spotify.music.data.WebDavConfig) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var creating by remember { mutableStateOf(false) }
+    androidx.compose.material3.Scaffold(
+        topBar = { androidx.compose.material3.TopAppBar(title = { androidx.compose.material3.Text("Albums") }) },
+        modifier = modifier
+    ) { paddingValues ->
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            if (creating) {
+                AlbumCreateForm(
+                    onCancel = { creating = false },
+                    onSave = { name, url, username, password ->
+                        val config = com.spotify.music.data.WebDavConfig(url = url, username = username, password = password)
+                        onCreate(name, config)
+                        creating = false
+                    }
+                )
+            } else {
+                androidx.compose.foundation.layout.Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.Top
+                ) {
+                    albums.forEach { album ->
+                        androidx.compose.material3.Button(
+                            onClick = { onSelect(album) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            androidx.compose.material3.Text(album.name)
+                        }
+                    }
+                    androidx.compose.material3.Button(
+                        onClick = { creating = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 16.dp)
+                    ) {
+                        androidx.compose.material3.Text("Add Album")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AlbumCreateForm(
+    onCancel: () -> Unit,
+    onSave: (name: String, url: String, username: String, password: String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var submitCounter by remember { mutableStateOf(0) }
+    val webDavClient = remember { com.spotify.music.webdav.WebDavClient() }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Top
+    ) {
+        androidx.compose.material3.Text(
+            text = "Create Album",
+            style = androidx.compose.material3.MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+        androidx.compose.material3.OutlinedTextField(
+            value = name,
+            onValueChange = { name = it; errorMessage = null },
+            label = { androidx.compose.material3.Text("Album Name") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            enabled = !isLoading
+        )
+        androidx.compose.material3.OutlinedTextField(
+            value = url,
+            onValueChange = { url = it; errorMessage = null },
+            label = { androidx.compose.material3.Text("WebDAV URL") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            enabled = !isLoading
+        )
+        androidx.compose.material3.OutlinedTextField(
+            value = username,
+            onValueChange = { username = it; errorMessage = null },
+            label = { androidx.compose.material3.Text("Username") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            enabled = !isLoading
+        )
+        androidx.compose.material3.OutlinedTextField(
+            value = password,
+            onValueChange = { password = it; errorMessage = null },
+            label = { androidx.compose.material3.Text("Password") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            enabled = !isLoading,
+            visualTransformation = if (passwordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password)
+        )
+        if (errorMessage != null) {
+            androidx.compose.material3.Text(
+                text = errorMessage!!,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp)
             )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            androidx.compose.material3.Button(
+                onClick = {
+                    onCancel()
+                },
+                enabled = !isLoading
+            ) { androidx.compose.material3.Text("Cancel") }
+            androidx.compose.material3.Button(
+                onClick = {
+                    if (name.isBlank() || url.isBlank() || username.isBlank() || password.isBlank()) {
+                        errorMessage = "Please fill in all fields"
+                        return@Button
+                    }
+                    isLoading = true
+                    errorMessage = null
+                    submitCounter++
+                },
+                enabled = !isLoading
+            ) {
+                if (isLoading) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.padding(end = 8.dp),
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                androidx.compose.material3.Text(if (isLoading) "Saving..." else "Save")
+            }
+        }
+    }
+
+    androidx.compose.runtime.LaunchedEffect(submitCounter) {
+        if (submitCounter > 0) {
+            val config = com.spotify.music.data.WebDavConfig(url, username, password)
+            webDavClient.testConnection(config)
+                .onSuccess {
+                    isLoading = false
+                    onSave(name, url, username, password)
+                }
+                .onFailure { e ->
+                    isLoading = false
+                    errorMessage = "Connection failed: ${e.message}"
+                }
         }
     }
 }
