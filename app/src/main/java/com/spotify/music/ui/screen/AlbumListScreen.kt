@@ -48,32 +48,32 @@ fun AlbumListScreen(
         creating = false
     }
     
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("Albums") }) },
-        modifier = modifier
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            if (creating) {
-                AlbumCreateForm(
-                    onCancel = { creating = false },
-                    onSave = { name, url, username, password, directoryUrl, coverImageBase64, serverConfigId ->
-                        val config = com.spotify.music.data.WebDavConfig(url = url, username = username, password = password)
-                        val album = Album(
-                            name = name,
-                            config = config,
-                            directoryUrl = directoryUrl,
-                            coverImageBase64 = coverImageBase64,
-                            serverConfigId = serverConfigId
-                        )
-                        onCreate(album, serverConfigId)
-                        creating = false
-                    }
+    if (creating) {
+        AlbumCreateForm(
+            onCancel = { creating = false },
+            onSave = { name, url, username, password, directoryUrl, coverImageBase64, serverConfigId ->
+                val config = com.spotify.music.data.WebDavConfig(url = url, username = username, password = password)
+                val album = Album(
+                    name = name,
+                    config = config,
+                    directoryUrl = directoryUrl,
+                    coverImageBase64 = coverImageBase64,
+                    serverConfigId = serverConfigId
                 )
-            } else {
+                onCreate(album, serverConfigId)
+                creating = false
+            }
+        )
+    } else {
+        Scaffold(
+            topBar = { TopAppBar(title = { Text("Albums") }) },
+            modifier = modifier
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
