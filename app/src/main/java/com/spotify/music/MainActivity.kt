@@ -20,7 +20,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Traffic
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,6 +65,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.spotify.music.data.Album
 import com.spotify.music.data.MusicFile
 import com.spotify.music.data.PlaylistState
 import com.spotify.music.data.WebDavConfig
@@ -83,14 +97,30 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
         AlbumListScreen(
             albums = albums,
             onSelect = { selectedAlbum = it },
-            onCreate = { album ->
+            onCreate = { album, serverConfigId ->
                 val updated = albums + album
                 albums = updated
                 com.spotify.music.data.AlbumsRepository.save(context, updated)
                 selectedAlbum = album
             },
             onDelete = { album ->
-                val updated = albums.filterNot { it.name == album.name && it.config.url == album.config.url }
+                val updated = albums.filterNot { 
+                    val itConfig = if (it.serverConfigId != null) {
+                        com.spotify.music.data.ServerConfigRepository.load(context)
+                            .find { config -> config.id == it.serverConfigId }
+                            ?.toWebDavConfig() ?: it.config
+                    } else {
+                        it.config
+                    }
+                    val albumConfig = if (album.serverConfigId != null) {
+                        com.spotify.music.data.ServerConfigRepository.load(context)
+                            .find { config -> config.id == album.serverConfigId }
+                            ?.toWebDavConfig() ?: album.config
+                    } else {
+                        album.config
+                    }
+                    it.name == album.name && itConfig.url == albumConfig.url
+                }
                 albums = updated
                 com.spotify.music.data.AlbumsRepository.save(context, updated)
             },
@@ -110,7 +140,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
 fun AlbumListScreen(
     albums: List<com.spotify.music.data.Album>,
     onSelect: (com.spotify.music.data.Album) -> Unit,
-    onCreate: (com.spotify.music.data.Album) -> Unit,
+    onCreate: (com.spotify.music.data.Album, String?) -> Unit,
     onDelete: (com.spotify.music.data.Album) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -128,15 +158,16 @@ fun AlbumListScreen(
             if (creating) {
                 AlbumCreateForm(
                     onCancel = { creating = false },
-                    onSave = { name, url, username, password, directoryUrl, coverImageBase64 ->
+                    onSave = { name, url, username, password, directoryUrl, coverImageBase64, serverConfigId ->
                         val config = com.spotify.music.data.WebDavConfig(url = url, username = username, password = password)
                         val album = com.spotify.music.data.Album(
                             name = name,
                             config = config,
                             directoryUrl = directoryUrl,
-                            coverImageBase64 = coverImageBase64
+                            coverImageBase64 = coverImageBase64,
+                            serverConfigId = serverConfigId
                         )
-                        onCreate(album)
+                        onCreate(album, serverConfigId)
                         creating = false
                     }
                 )
@@ -171,7 +202,15 @@ fun AlbumListScreen(
                                         style = androidx.compose.material3.MaterialTheme.typography.titleMedium
                                     )
                                     androidx.compose.material3.Text(
-                                        text = album.directoryUrl ?: album.config.url,
+                                        text = album.directoryUrl ?: run {
+                                            if (album.serverConfigId != null) {
+                                                com.spotify.music.data.ServerConfigRepository.load(context)
+                                                    .find { it.id == album.serverConfigId }
+                                                    ?.toWebDavConfig()?.url ?: album.config.url
+                                            } else {
+                                                album.config.url
+                                            }
+                                        },
                                         style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                                         color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -204,8 +243,9 @@ fun AlbumListScreen(
 @Composable
 fun AlbumCreateForm(
     onCancel: () -> Unit,
-    onSave: (name: String, url: String, username: String, password: String, directoryUrl: String?, coverImageBase64: String?) -> Unit
+    onSave: (name: String, url: String, username: String, password: String, directoryUrl: String?, coverImageBase64: String?, serverConfigId: String?) -> Unit
 ) {
+    val context = LocalContext.current
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
@@ -220,6 +260,32 @@ fun AlbumCreateForm(
     var isDirectoryLoading by remember { mutableStateOf(false) }
     val webDavClient = remember { com.spotify.music.webdav.WebDavClient() }
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+    
+    // Server config selection
+    var serverConfigs by remember { mutableStateOf(com.spotify.music.data.ServerConfigRepository.load(context)) }
+    var selectedServerConfigId by remember { mutableStateOf<String?>(null) }
+    var showServerConfigDialog by remember { mutableStateOf(false) }
+    var useExistingConfig by remember { mutableStateOf(false) }
+    
+    // Update server configs when dialog is shown
+    androidx.compose.runtime.LaunchedEffect(showServerConfigDialog) {
+        if (showServerConfigDialog) {
+            serverConfigs = com.spotify.music.data.ServerConfigRepository.load(context)
+        }
+    }
+    
+    // When a server config is selected, populate the fields
+    androidx.compose.runtime.LaunchedEffect(selectedServerConfigId) {
+        selectedServerConfigId?.let { id ->
+            val config = serverConfigs.find { it.id == id }
+            config?.let {
+                url = it.url
+                username = it.username
+                password = it.password
+                directoryUrl = null  // Reset directory when config changes
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -232,6 +298,106 @@ fun AlbumCreateForm(
             style = androidx.compose.material3.MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(bottom = 16.dp)
         )
+        
+        // Server config selection
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            androidx.compose.material3.Checkbox(
+                checked = useExistingConfig,
+                onCheckedChange = { 
+                    useExistingConfig = it
+                    if (!it) {
+                        selectedServerConfigId = null
+                        url = ""
+                        username = ""
+                        password = ""
+                    }
+                }
+            )
+            androidx.compose.material3.Text(
+                text = "使用现有服务器配置",
+                modifier = Modifier.weight(1f)
+            )
+        }
+        
+        if (useExistingConfig) {
+            // Server config dropdown
+            var expanded by remember { mutableStateOf(false) }
+            androidx.compose.material3.OutlinedTextField(
+                value = selectedServerConfigId?.let { id ->
+                    serverConfigs.find { it.id == id }?.name ?: ""
+                } ?: "",
+                onValueChange = {},
+                readOnly = true,
+                label = { androidx.compose.material3.Text("选择服务器配置") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = true },
+                trailingIcon = {
+                    androidx.compose.material3.IconButton(onClick = { expanded = true }) {
+                        androidx.compose.material3.Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Default.Edit,
+                            contentDescription = "选择配置"
+                        )
+                    }
+                }
+            )
+            
+            androidx.compose.material3.DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                serverConfigs.forEach { config ->
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { androidx.compose.material3.Text(config.name) },
+                        onClick = {
+                            selectedServerConfigId = config.id
+                            expanded = false
+                        }
+                    )
+                }
+                androidx.compose.material3.Divider()
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { androidx.compose.material3.Text("管理服务器配置...") },
+                    onClick = {
+                        expanded = false
+                        showServerConfigDialog = true
+                    }
+                )
+            }
+        } else {
+            // Manual input fields
+            androidx.compose.material3.OutlinedTextField(
+                value = url,
+                onValueChange = { url = it; errorMessage = null; directoryUrl = null },
+                label = { androidx.compose.material3.Text("WebDAV URL") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = !isLoading
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = username,
+                onValueChange = { username = it; errorMessage = null },
+                label = { androidx.compose.material3.Text("Username") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = !isLoading
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = password,
+                onValueChange = { password = it; errorMessage = null },
+                label = { androidx.compose.material3.Text("Password") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = !isLoading,
+                visualTransformation = if (passwordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password)
+            )
+        }
+        
         androidx.compose.material3.OutlinedTextField(
             value = name,
             onValueChange = { name = it; errorMessage = null },
@@ -239,32 +405,6 @@ fun AlbumCreateForm(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             enabled = !isLoading
-        )
-        androidx.compose.material3.OutlinedTextField(
-            value = url,
-            onValueChange = { url = it; errorMessage = null; directoryUrl = null },
-            label = { androidx.compose.material3.Text("WebDAV URL") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            enabled = !isLoading
-        )
-        androidx.compose.material3.OutlinedTextField(
-            value = username,
-            onValueChange = { username = it; errorMessage = null },
-            label = { androidx.compose.material3.Text("Username") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            enabled = !isLoading
-        )
-        androidx.compose.material3.OutlinedTextField(
-            value = password,
-            onValueChange = { password = it; errorMessage = null },
-            label = { androidx.compose.material3.Text("Password") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            enabled = !isLoading,
-            visualTransformation = if (passwordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password)
         )
         if (errorMessage != null) {
             androidx.compose.material3.Text(
@@ -293,13 +433,29 @@ fun AlbumCreateForm(
             ) { androidx.compose.material3.Text("Cancel") }
             androidx.compose.material3.Button(
                 onClick = {
-                    if (url.isBlank() || username.isBlank() || password.isBlank()) {
+                    val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
+                        serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
+                    } else {
+                        url
+                    }
+                    val currentUsername = if (useExistingConfig && selectedServerConfigId != null) {
+                        serverConfigs.find { it.id == selectedServerConfigId }?.username ?: username
+                    } else {
+                        username
+                    }
+                    val currentPassword = if (useExistingConfig && selectedServerConfigId != null) {
+                        serverConfigs.find { it.id == selectedServerConfigId }?.password ?: password
+                    } else {
+                        password
+                    }
+                    
+                    if (currentUrl.isBlank() || currentUsername.isBlank() || currentPassword.isBlank()) {
                         errorMessage = "Please fill in URL, username and password"
                         return@Button
                     }
                     isDirectoryLoading = true
                     errorMessage = null
-                    val config = com.spotify.music.data.WebDavConfig(url, username, password)
+                    val config = com.spotify.music.data.WebDavConfig(currentUrl, currentUsername, currentPassword)
                     coroutineScope.launch {
                         webDavClient.listDirectories(config)
                             .onSuccess { list ->
@@ -324,7 +480,23 @@ fun AlbumCreateForm(
             }
             androidx.compose.material3.Button(
                 onClick = {
-                    if (name.isBlank() || url.isBlank() || username.isBlank() || password.isBlank()) {
+                    val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
+                        serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
+                    } else {
+                        url
+                    }
+                    val currentUsername = if (useExistingConfig && selectedServerConfigId != null) {
+                        serverConfigs.find { it.id == selectedServerConfigId }?.username ?: username
+                    } else {
+                        username
+                    }
+                    val currentPassword = if (useExistingConfig && selectedServerConfigId != null) {
+                        serverConfigs.find { it.id == selectedServerConfigId }?.password ?: password
+                    } else {
+                        password
+                    }
+                    
+                    if (name.isBlank() || currentUrl.isBlank() || currentUsername.isBlank() || currentPassword.isBlank()) {
                         errorMessage = "Please fill in all fields"
                         return@Button
                     }
@@ -351,8 +523,24 @@ fun AlbumCreateForm(
 
     androidx.compose.runtime.LaunchedEffect(submitCounter) {
         if (submitCounter > 0) {
-            val config = com.spotify.music.data.WebDavConfig(url, username, password)
-            val targetUrl = directoryUrl ?: url
+            val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
+                serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
+            } else {
+                url
+            }
+            val currentUsername = if (useExistingConfig && selectedServerConfigId != null) {
+                serverConfigs.find { it.id == selectedServerConfigId }?.username ?: username
+            } else {
+                username
+            }
+            val currentPassword = if (useExistingConfig && selectedServerConfigId != null) {
+                serverConfigs.find { it.id == selectedServerConfigId }?.password ?: password
+            } else {
+                password
+            }
+            
+            val config = com.spotify.music.data.WebDavConfig(currentUrl, currentUsername, currentPassword)
+            val targetUrl = directoryUrl ?: currentUrl
             webDavClient.testConnection(config)
                 .onSuccess {
                     val coverResult = webDavClient.findCoverImage(config, targetUrl)
@@ -361,11 +549,12 @@ fun AlbumCreateForm(
                         android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
                     }
                     isLoading = false
+                    val finalServerConfigId = if (useExistingConfig) selectedServerConfigId else null
                     if (name.isBlank()) {
                         val folderName = targetUrl.trimEnd('/').substringAfterLast('/')
-                        onSave(folderName, url, username, password, targetUrl, coverBase64)
+                        onSave(folderName, currentUrl, currentUsername, currentPassword, targetUrl, coverBase64, finalServerConfigId)
                     } else {
-                        onSave(name, url, username, password, targetUrl, coverBase64)
+                        onSave(name, currentUrl, currentUsername, currentPassword, targetUrl, coverBase64, finalServerConfigId)
                     }
                 }
                 .onFailure { e ->
@@ -385,12 +574,17 @@ fun AlbumCreateForm(
                     items(directories.size) { index ->
                         val dir = directories[index]
                         val displayName = dir.name.ifBlank { dir.path }
+                        val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
+                            serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
+                        } else {
+                            url
+                        }
                         androidx.compose.material3.ListItem(
                             headlineContent = { androidx.compose.material3.Text(displayName) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    directoryUrl = (url.trimEnd('/') + "/" + dir.name.trim('/')).trimEnd('/')
+                                    directoryUrl = (currentUrl.trimEnd('/') + "/" + dir.name.trim('/')).trimEnd('/')
                                     if (name.isBlank()) {
                                         name = dir.name.trim('/')
                                     }
@@ -402,6 +596,252 @@ fun AlbumCreateForm(
             }
         )
     }
+    
+    // Server config management dialog
+    if (showServerConfigDialog) {
+        ServerConfigManagementDialog(
+            onDismiss = { 
+                showServerConfigDialog = false
+                serverConfigs = com.spotify.music.data.ServerConfigRepository.load(context)
+            },
+            onConfigSelected = { configId ->
+                selectedServerConfigId = configId
+                showServerConfigDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun ServerConfigManagementDialog(
+    onDismiss: () -> Unit,
+    onConfigSelected: (String) -> Unit
+) {
+    val context = LocalContext.current
+    var configs by remember { mutableStateOf(com.spotify.music.data.ServerConfigRepository.load(context)) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var editingConfig by remember { mutableStateOf<com.spotify.music.data.ServerConfig?>(null) }
+    
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { androidx.compose.material3.Text("服务器配置管理") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (configs.isEmpty()) {
+                    androidx.compose.material3.Text(
+                        text = "暂无服务器配置",
+                        modifier = Modifier.padding(16.dp)
+                    )
+                } else {
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        items(configs.size) { index ->
+                            val config = configs[index]
+                            androidx.compose.material3.Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                androidx.compose.foundation.layout.Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    androidx.compose.foundation.layout.Column(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        androidx.compose.material3.Text(
+                                            text = config.name,
+                                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium
+                                        )
+                                        androidx.compose.material3.Text(
+                                            text = config.url,
+                                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Row {
+                                        androidx.compose.material3.IconButton(
+                                            onClick = {
+                                                editingConfig = config
+                                                showCreateDialog = true
+                                            }
+                                        ) {
+                                            androidx.compose.material3.Icon(
+                                                imageVector = androidx.compose.material.icons.Icons.Default.Edit,
+                                                contentDescription = "编辑"
+                                            )
+                                        }
+                                        androidx.compose.material3.IconButton(
+                                            onClick = {
+                                                com.spotify.music.data.ServerConfigRepository.delete(context, config.id)
+                                                configs = com.spotify.music.data.ServerConfigRepository.load(context)
+                                            }
+                                        ) {
+                                            androidx.compose.material3.Icon(
+                                                imageVector = androidx.compose.material.icons.Icons.Default.Delete,
+                                                contentDescription = "删除"
+                                            )
+                                        }
+                                    }
+                                }
+                                androidx.compose.material3.Button(
+                                    onClick = { onConfigSelected(config.id) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                ) {
+                                    androidx.compose.material3.Text("选择此配置")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.Button(
+                onClick = {
+                    showCreateDialog = true
+                }
+            ) {
+                androidx.compose.material3.Text("新建配置")
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                androidx.compose.material3.Text("关闭")
+            }
+        }
+    )
+    
+    if (showCreateDialog) {
+        ServerConfigEditDialog(
+            config = editingConfig,
+            onDismiss = {
+                showCreateDialog = false
+                editingConfig = null
+                configs = com.spotify.music.data.ServerConfigRepository.load(context)
+            },
+            onSave = { name, url, username, password ->
+                if (editingConfig != null) {
+                    // Update existing
+                    val updated = editingConfig!!.copy(
+                        name = name,
+                        url = url,
+                        username = username,
+                        password = password
+                    )
+                    com.spotify.music.data.ServerConfigRepository.update(context, updated)
+                } else {
+                    // Create new
+                    val newConfig = com.spotify.music.data.ServerConfig(
+                        id = java.util.UUID.randomUUID().toString(),
+                        name = name,
+                        url = url,
+                        username = username,
+                        password = password
+                    )
+                    com.spotify.music.data.ServerConfigRepository.add(context, newConfig)
+                }
+                configs = com.spotify.music.data.ServerConfigRepository.load(context)
+                showCreateDialog = false
+                editingConfig = null
+            }
+        )
+    }
+}
+
+@Composable
+fun ServerConfigEditDialog(
+    config: com.spotify.music.data.ServerConfig?,
+    onDismiss: () -> Unit,
+    onSave: (name: String, url: String, username: String, password: String) -> Unit
+) {
+    var name by remember { mutableStateOf(config?.name ?: "") }
+    var url by remember { mutableStateOf(config?.url ?: "") }
+    var username by remember { mutableStateOf(config?.username ?: "") }
+    var password by remember { mutableStateOf(config?.password ?: "") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { androidx.compose.material3.Text(if (config != null) "编辑服务器配置" else "新建服务器配置") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it; errorMessage = null },
+                    label = { androidx.compose.material3.Text("配置名称") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it; errorMessage = null },
+                    label = { androidx.compose.material3.Text("WebDAV URL") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it; errorMessage = null },
+                    label = { androidx.compose.material3.Text("用户名") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it; errorMessage = null },
+                    label = { androidx.compose.material3.Text("密码") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+                    trailingIcon = {
+                        androidx.compose.material3.IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            androidx.compose.material3.Icon(
+                                imageVector = if (passwordVisible) androidx.compose.material.icons.Icons.Default.VisibilityOff else androidx.compose.material.icons.Icons.Default.Visibility,
+                                contentDescription = if (passwordVisible) "隐藏密码" else "显示密码"
+                            )
+                        }
+                    }
+                )
+                if (errorMessage != null) {
+                    androidx.compose.material3.Text(
+                        text = errorMessage!!,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.Button(
+                onClick = {
+                    if (name.isBlank() || url.isBlank() || username.isBlank() || password.isBlank()) {
+                        errorMessage = "请填写所有字段"
+                        return@Button
+                    }
+                    onSave(name, url, username, password)
+                }
+            ) {
+                androidx.compose.material3.Text("保存")
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                androidx.compose.material3.Text("取消")
+            }
+        }
+    )
 }
 @Composable
 fun MusicPlayerScreen(
@@ -413,7 +853,13 @@ fun MusicPlayerScreen(
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var playlistState by remember { mutableStateOf(PlaylistState()) }
     
-    val webDavConfig = album.config
+    val webDavConfig = if (album.serverConfigId != null) {
+        com.spotify.music.data.ServerConfigRepository.load(context)
+            .find { it.id == album.serverConfigId }
+            ?.toWebDavConfig() ?: album.config
+    } else {
+        album.config
+    }
     
     // Set WebDAV credentials for the service - will dynamically update if service is already running
     LaunchedEffect(webDavConfig) {

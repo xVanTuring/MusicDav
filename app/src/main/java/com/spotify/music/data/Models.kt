@@ -6,6 +6,19 @@ data class WebDavConfig(
     val password: String = ""
 )
 
+// Server configuration for WebDAV
+data class ServerConfig(
+    val id: String,
+    val name: String,
+    val url: String,
+    val username: String,
+    val password: String
+) {
+    fun toWebDavConfig(): WebDavConfig {
+        return WebDavConfig(url, username, password)
+    }
+}
+
 data class MusicFile(
     val name: String,
     val url: String,
@@ -36,8 +49,93 @@ data class PlaylistState(
     val name: String,
     val config: WebDavConfig,
     val directoryUrl: String? = null,
-    val coverImageBase64: String? = null
+    val coverImageBase64: String? = null,
+    val serverConfigId: String? = null  // Reference to ServerConfig, if null use config directly
 )
+
+// Helper function to get WebDavConfig from Album
+fun Album.getWebDavConfig(context: android.content.Context): WebDavConfig {
+    return if (serverConfigId != null) {
+        ServerConfigRepository.load(context)
+            .find { it.id == serverConfigId }
+            ?.toWebDavConfig()
+            ?: config
+    } else {
+        config
+    }
+}
+
+// Simple persistence for server configurations using SharedPreferences and JSON
+object ServerConfigRepository {
+    private const val PREF_NAME = "server_config_prefs"
+    private const val KEY_CONFIGS = "server_configs_json"
+
+    fun load(context: android.content.Context): List<ServerConfig> {
+        val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
+        val json = prefs.getString(KEY_CONFIGS, "[]") ?: "[]"
+        return parseConfigs(json)
+    }
+
+    fun save(context: android.content.Context, configs: List<ServerConfig>) {
+        val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_CONFIGS, toJson(configs)).apply()
+    }
+
+    fun add(context: android.content.Context, config: ServerConfig) {
+        val configs = load(context).toMutableList()
+        configs.add(config)
+        save(context, configs)
+    }
+
+    fun update(context: android.content.Context, config: ServerConfig) {
+        val configs = load(context).toMutableList()
+        val index = configs.indexOfFirst { it.id == config.id }
+        if (index >= 0) {
+            configs[index] = config
+            save(context, configs)
+        }
+    }
+
+    fun delete(context: android.content.Context, id: String) {
+        val configs = load(context).filterNot { it.id == id }
+        save(context, configs)
+    }
+
+    fun getById(context: android.content.Context, id: String): ServerConfig? {
+        return load(context).find { it.id == id }
+    }
+
+    private fun parseConfigs(json: String): List<ServerConfig> {
+        val arr = org.json.JSONArray(json)
+        val result = mutableListOf<ServerConfig>()
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val id = obj.optString("id", "")
+            val name = obj.optString("name", "")
+            val url = obj.optString("url", "")
+            val username = obj.optString("username", "")
+            val password = obj.optString("password", "")
+            if (id.isNotBlank() && name.isNotBlank()) {
+                result.add(ServerConfig(id, name, url, username, password))
+            }
+        }
+        return result
+    }
+
+    private fun toJson(configs: List<ServerConfig>): String {
+        val arr = org.json.JSONArray()
+        for (config in configs) {
+            val obj = org.json.JSONObject()
+            obj.put("id", config.id)
+            obj.put("name", config.name)
+            obj.put("url", config.url)
+            obj.put("username", config.username)
+            obj.put("password", config.password)
+            arr.put(obj)
+        }
+        return arr.toString()
+    }
+}
 
 // Simple persistence for albums using SharedPreferences and JSON
  object AlbumsRepository {
@@ -67,12 +165,14 @@ data class PlaylistState(
             val password = cfg.optString("password", "")
             val directoryUrl = if (obj.has("directoryUrl")) obj.optString("directoryUrl", null) else null
             val coverBase64 = if (obj.has("coverImageBase64")) obj.optString("coverImageBase64", null) else null
+            val serverConfigId = if (obj.has("serverConfigId")) obj.optString("serverConfigId", null) else null
             result.add(
                 Album(
                     name = name,
                     config = WebDavConfig(url, username, password),
                     directoryUrl = directoryUrl,
-                    coverImageBase64 = coverBase64
+                    coverImageBase64 = coverBase64,
+                    serverConfigId = serverConfigId
                 )
             )
         }
@@ -91,6 +191,9 @@ data class PlaylistState(
             obj.put("config", cfg)
             obj.put("directoryUrl", album.directoryUrl)
             obj.put("coverImageBase64", album.coverImageBase64)
+            if (album.serverConfigId != null) {
+                obj.put("serverConfigId", album.serverConfigId)
+            }
             arr.put(obj)
         }
         return arr.toString()
