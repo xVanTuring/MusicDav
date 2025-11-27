@@ -1,5 +1,6 @@
 package com.spotify.music.ui.screen
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -68,6 +69,15 @@ fun AlbumCreateForm(
     var selectedServerConfigId by remember { mutableStateOf<String?>(null) }
     var showServerConfigDialog by remember { mutableStateOf(false) }
     var useExistingConfig by remember { mutableStateOf(false) }
+    
+    // 拦截返回键
+    BackHandler {
+        when {
+            showServerConfigDialog -> showServerConfigDialog = false
+            directoryPickerVisible -> directoryPickerVisible = false
+            else -> onCancel()
+        }
+    }
     
     // Update server configs when dialog is shown
     LaunchedEffect(showServerConfigDialog) {

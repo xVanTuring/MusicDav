@@ -34,6 +34,20 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     var albums by remember { mutableStateOf(com.spotify.music.data.AlbumsRepository.load(context)) }
     var selectedAlbum by remember { mutableStateOf<com.spotify.music.data.Album?>(null) }
     
+    // 在主页面的返回键处理：双击退出
+    var lastBackPressTime by remember { mutableStateOf(0L) }
+    androidx.activity.compose.BackHandler(enabled = selectedAlbum == null) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastBackPressTime < 2000) {
+            // 两次点击间隔小于2秒，退出应用
+            (context as? android.app.Activity)?.finish()
+        } else {
+            // 第一次点击，显示提示
+            lastBackPressTime = currentTime
+            android.widget.Toast.makeText(context, "再按一次退出应用", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    
     if (selectedAlbum == null) {
         AlbumListScreen(
             albums = albums,

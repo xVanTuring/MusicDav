@@ -1,5 +1,6 @@
 package com.spotify.music.ui.screen
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +42,11 @@ fun AlbumListScreen(
 ) {
     val context = LocalContext.current
     var creating by remember { mutableStateOf(false) }
+    
+    // 拦截返回键，如果在创建页面则返回列表页面
+    BackHandler(enabled = creating) {
+        creating = false
+    }
     
     Scaffold(
         topBar = { TopAppBar(title = { Text("Albums") }) },

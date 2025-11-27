@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -42,6 +43,11 @@ fun MusicPlayerScreen(
     val context = LocalContext.current
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var playlistState by remember { mutableStateOf(PlaylistState()) }
+    
+    // 拦截返回键，返回到专辑列表页面
+    BackHandler {
+        onBack()
+    }
     
     val webDavConfig = if (album.serverConfigId != null) {
         ServerConfigRepository.load(context)
