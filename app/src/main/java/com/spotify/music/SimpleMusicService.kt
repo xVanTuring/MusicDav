@@ -76,11 +76,18 @@ class SimpleMusicService : MediaSessionService() {
     
     @UnstableApi
     private fun updateCredentials(username: String, password: String) {
+        // 检查 credentials 是否真的改变了
+        if (webDavUsername == username && webDavPassword == password) {
+            // credentials 相同，只需要更新 auth headers（如果还没有设置）
+            updateAuthHeaders()
+            return
+        }
+        
         webDavUsername = username
         webDavPassword = password
         updateAuthHeaders()
         
-        // Recreate the player with new credentials if needed
+        // 只有在 credentials 真正改变时才重新创建 player
         player?.let { existingPlayer ->
             val currentPosition = existingPlayer.currentPosition
             val currentIndex = existingPlayer.currentMediaItemIndex

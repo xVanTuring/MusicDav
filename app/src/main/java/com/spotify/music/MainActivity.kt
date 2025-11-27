@@ -525,24 +525,74 @@ fun MusicPlayerScreen(
         }
     }
     
-    fun loadPlaylist(songs: List<MusicFile>) {
-        playlistState = playlistState.copy(songs = songs)
-        
-        // Create media items for all songs
-        val mediaItems = songs.map { song ->
-            MediaItem.Builder()
-                .setUri(song.url)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(song.name.substringBeforeLast('.'))
-                        .build()
-                )
-                .build()
+    // 当 controller 初始化后，如果播放列表已加载但播放器为空，则设置播放列表
+    // 注意：只在播放器为空时设置，不会自动切换不同的播放列表
+    LaunchedEffect(controller, playlistState.songs) {
+        controller?.let { currentController ->
+            if (playlistState.songs.isNotEmpty()) {
+                val currentMediaItemCount = currentController.mediaItemCount
+                // 只在播放列表为空时才设置，不自动切换不同的播放列表
+                if (currentMediaItemCount == 0) {
+                    val mediaItems = playlistState.songs.map { song ->
+                        MediaItem.Builder()
+                            .setUri(song.url)
+                            .setMediaMetadata(
+                                MediaMetadata.Builder()
+                                    .setTitle(song.name.substringBeforeLast('.'))
+                                    .build()
+                            )
+                            .build()
+                    }
+                    currentController.setMediaItems(mediaItems)
+                    currentController.prepare()
+                }
+            }
         }
+    }
+    
+    fun loadPlaylist(songs: List<MusicFile>) {
+        // 只更新播放列表数据，不自动设置到播放器
+        // 播放列表的切换只在用户点击歌曲时进行
+        playlistState = playlistState.copy(songs = songs)
+    }
+    
+    fun setPlaylistAndPlay(index: Int) {
+        // 用户点击歌曲时，设置播放列表并播放
+        if (playlistState.songs.isEmpty()) return
         
-        controller?.apply {
-            setMediaItems(mediaItems)
-            prepare()
+        controller?.let { currentController ->
+            val currentUrls = mutableListOf<String>()
+            val currentMediaItemCount = currentController.mediaItemCount
+            for (i in 0 until currentMediaItemCount) {
+                currentController.getMediaItemAt(i)?.localConfiguration?.uri?.toString()?.let {
+                    currentUrls.add(it)
+                }
+            }
+            
+            val newUrls = playlistState.songs.map { it.url }
+            
+            // 如果播放列表不同，需要设置新的播放列表
+            if (currentUrls != newUrls) {
+                val mediaItems = playlistState.songs.map { song ->
+                    MediaItem.Builder()
+                        .setUri(song.url)
+                        .setMediaMetadata(
+                            MediaMetadata.Builder()
+                                .setTitle(song.name.substringBeforeLast('.'))
+                                .build()
+                        )
+                        .build()
+                }
+                
+                currentController.setMediaItems(mediaItems)
+                currentController.prepare()
+            }
+            
+            // 跳转到指定位置并播放
+            if (index >= 0 && index < playlistState.songs.size) {
+                currentController.seekToDefaultPosition(index)
+                currentController.play()
+            }
         }
     }
 
@@ -556,10 +606,7 @@ fun MusicPlayerScreen(
             loadPlaylist(songs)
         },
         onSongSelected = { index, song ->
-            controller?.apply {
-                seekToDefaultPosition(index)
-                play()
-            }
+            setPlaylistAndPlay(index)
         },
         bottomBar = {
             BottomPlayerBar(
