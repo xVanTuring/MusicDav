@@ -96,3 +96,54 @@ data class PlaylistState(
         return arr.toString()
     }
 }
+
+// Playlist cache for storing music files
+object PlaylistCache {
+    private const val PREF_NAME = "playlist_cache_prefs"
+    
+    private fun getCacheKey(directoryUrl: String?): String {
+        return directoryUrl ?: "default"
+    }
+    
+    fun load(context: android.content.Context, directoryUrl: String?): List<MusicFile> {
+        val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
+        val key = getCacheKey(directoryUrl)
+        val json = prefs.getString(key, "[]") ?: "[]"
+        return parseMusicFiles(json)
+    }
+    
+    fun save(context: android.content.Context, directoryUrl: String?, musicFiles: List<MusicFile>) {
+        val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
+        val key = getCacheKey(directoryUrl)
+        prefs.edit().putString(key, toJson(musicFiles)).apply()
+    }
+    
+    private fun parseMusicFiles(json: String): List<MusicFile> {
+        val arr = org.json.JSONArray(json)
+        val result = mutableListOf<MusicFile>()
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val name = obj.optString("name", "")
+            val url = obj.optString("url", "")
+            val path = obj.optString("path", "")
+            val size = obj.optLong("size", 0L)
+            val modifiedDate = obj.optLong("modifiedDate", 0L)
+            result.add(MusicFile(name, url, path, size, modifiedDate))
+        }
+        return result
+    }
+    
+    private fun toJson(musicFiles: List<MusicFile>): String {
+        val arr = org.json.JSONArray()
+        for (file in musicFiles) {
+            val obj = org.json.JSONObject()
+            obj.put("name", file.name)
+            obj.put("url", file.url)
+            obj.put("path", file.path)
+            obj.put("size", file.size)
+            obj.put("modifiedDate", file.modifiedDate)
+            arr.put(obj)
+        }
+        return arr.toString()
+    }
+}

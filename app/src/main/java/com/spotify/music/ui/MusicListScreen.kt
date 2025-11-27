@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
 import com.spotify.music.data.MusicFile
 import com.spotify.music.data.WebDavConfig
 import com.spotify.music.webdav.WebDavClient
@@ -56,8 +57,10 @@ fun MusicListScreen(
     bottomBar: @Composable () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var musicFiles by remember { mutableStateOf<List<MusicFile>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
+    var isRefreshing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     
     val scope = rememberCoroutineScope()
@@ -72,29 +75,77 @@ fun MusicListScreen(
         }
     }
     
-    fun loadMusicFiles() {
-        isLoading = true
+    // 首次加载：先显示缓存，然后后台更新
+    LaunchedEffect(effectiveConfig.url) {
+        // 先加载缓存并立即显示
+        val cachedFiles = com.spotify.music.data.PlaylistCache.load(context, directoryPath)
+        if (cachedFiles.isNotEmpty()) {
+            musicFiles = cachedFiles
+            // 通知播放列表已加载（使用缓存）
+            onPlaylistLoaded(cachedFiles)
+            // 有缓存时，后台刷新不显示加载状态
+            isRefreshing = true
+        } else {
+            // 没有缓存时，显示加载状态
+            isLoading = true
+        }
+        
+        errorMessage = null
+        scope.launch {
+            webDavClient.fetchMusicFiles(effectiveConfig)
+                .onSuccess { files ->
+                    // 检查数据是否不同
+                    val cachedUrls = cachedFiles.map { it.url }.toSet()
+                    val newUrls = files.map { it.url }.toSet()
+                    
+                    if (cachedUrls != newUrls) {
+                        // 数据不同，更新UI和缓存
+                        musicFiles = files
+                        com.spotify.music.data.PlaylistCache.save(context, directoryPath, files)
+                        // 通知播放列表已更新（但不影响当前播放）
+                        onPlaylistLoaded(files)
+                    } else {
+                        // URL列表相同，但元数据可能有变化，更新UI和缓存
+                        musicFiles = files
+                        com.spotify.music.data.PlaylistCache.save(context, directoryPath, files)
+                        // 通知播放列表已更新（但不影响当前播放，因为URL相同）
+                        onPlaylistLoaded(files)
+                    }
+                    isLoading = false
+                    isRefreshing = false
+                }
+                .onFailure { e ->
+                    // 如果加载失败，保持缓存数据，只显示错误（如果有缓存）
+                    if (cachedFiles.isEmpty()) {
+                        errorMessage = "Failed to load music: ${e.message}"
+                    }
+                    isLoading = false
+                    isRefreshing = false
+                }
+        }
+    }
+    
+    fun loadMusicFiles(showLoading: Boolean = false) {
+        if (showLoading) {
+            isLoading = true
+        } else {
+            isRefreshing = true
+        }
         errorMessage = null
         scope.launch {
             webDavClient.fetchMusicFiles(effectiveConfig)
                 .onSuccess { files ->
                     musicFiles = files
+                    com.spotify.music.data.PlaylistCache.save(context, directoryPath, files)
+                    onPlaylistLoaded(files)
                     isLoading = false
+                    isRefreshing = false
                 }
                 .onFailure { e ->
                     errorMessage = "Failed to load music: ${e.message}"
                     isLoading = false
+                    isRefreshing = false
                 }
-        }
-    }
-    
-    LaunchedEffect(effectiveConfig) {
-        loadMusicFiles()
-    }
-    
-    LaunchedEffect(musicFiles) {
-        if (musicFiles.isNotEmpty()) {
-            onPlaylistLoaded(musicFiles)
         }
     }
     
@@ -112,7 +163,18 @@ fun MusicListScreen(
                     {}
                 },
                 actions = {
-                    IconButton(onClick = { loadMusicFiles() }) {
+                    if (isRefreshing) {
+                        Box(
+                            modifier = Modifier.padding(16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    }
+                    IconButton(onClick = { loadMusicFiles(showLoading = false) }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
                 }

@@ -553,7 +553,20 @@ fun MusicPlayerScreen(
     fun loadPlaylist(songs: List<MusicFile>) {
         // 只更新播放列表数据，不自动设置到播放器
         // 播放列表的切换只在用户点击歌曲时进行
-        playlistState = playlistState.copy(songs = songs)
+        // 如果当前播放的歌曲在新列表中，保持当前索引；否则重置索引
+        val currentSong = playlistState.currentSong
+        val newIndex = if (currentSong != null) {
+            songs.indexOfFirst { it.url == currentSong.url }.takeIf { it >= 0 } 
+                ?: playlistState.currentIndex.takeIf { it < songs.size } 
+                ?: -1
+        } else {
+            -1
+        }
+        
+        playlistState = playlistState.copy(
+            songs = songs,
+            currentIndex = newIndex
+        )
     }
     
     fun setPlaylistAndPlay(index: Int) {
