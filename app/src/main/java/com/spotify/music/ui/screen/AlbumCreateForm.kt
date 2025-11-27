@@ -60,7 +60,10 @@ fun AlbumCreateForm(
     var directoryUrl by remember { mutableStateOf<String?>(null) }
     var directoryPickerVisible by remember { mutableStateOf(false) }
     var directories by remember { mutableStateOf<List<com.thegrizzlylabs.sardineandroid.DavResource>>(emptyList()) }
+    var allResources by remember { mutableStateOf<List<com.thegrizzlylabs.sardineandroid.DavResource>>(emptyList()) }
     var isDirectoryLoading by remember { mutableStateOf(false) }
+    var currentBrowsingPath by remember { mutableStateOf<String?>(null) }
+    var pathHistory by remember { mutableStateOf<List<String>>(emptyList()) }
     val webDavClient = remember { WebDavClient() }
     val coroutineScope = rememberCoroutineScope()
     
@@ -269,9 +272,12 @@ fun AlbumCreateForm(
                     errorMessage = null
                     val config = com.spotify.music.data.WebDavConfig(currentUrl, currentUsername, currentPassword)
                     coroutineScope.launch {
-                        webDavClient.listDirectories(config)
-                            .onSuccess { list ->
-                                directories = list
+                        webDavClient.listAllResources(config)
+                            .onSuccess { (dirs, allRes) ->
+                                directories = dirs
+                                allResources = allRes
+                                currentBrowsingPath = currentUrl
+                                pathHistory = listOf(currentUrl)
                                 directoryPickerVisible = true
                             }
                             .onFailure { e ->
@@ -378,31 +384,192 @@ fun AlbumCreateForm(
 
     if (directoryPickerVisible) {
         AlertDialog(
-            onDismissRequest = { directoryPickerVisible = false },
-            confirmButton = {},
-            title = { Text("Choose Folder") },
-            text = {
-                LazyColumn {
-                    items(directories.size) { index ->
-                        val dir = directories[index]
-                        val displayName = dir.name.ifBlank { dir.path }
-                        val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
-                            serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
-                        } else {
-                            url
+            onDismissRequest = { 
+                directoryPickerVisible = false
+                currentBrowsingPath = null
+                pathHistory = emptyList()
+                allResources = emptyList()
+            },
+            confirmButton = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { 
+                            directoryPickerVisible = false
+                            currentBrowsingPath = null
+                            pathHistory = emptyList()
+                            allResources = emptyList()
                         }
-                        ListItem(
-                            headlineContent = { Text(displayName) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    directoryUrl = (currentUrl.trimEnd('/') + "/" + dir.name.trim('/')).trimEnd('/')
-                                    if (name.isBlank()) {
-                                        name = dir.name.trim('/')
+                    ) {
+                        Text("取消")
+                    }
+                    if (pathHistory.size > 1) {
+                        Button(
+                            onClick = {
+                                if (pathHistory.size > 1) {
+                                    val newHistory = pathHistory.dropLast(1)
+                                    pathHistory = newHistory
+                                    val parentPath = newHistory.last()
+                                    currentBrowsingPath = parentPath
+                                    
+                                    isDirectoryLoading = true
+                                    val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
+                                        serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
+                                    } else {
+                                        url
                                     }
-                                    directoryPickerVisible = false
+                                    val currentUsername = if (useExistingConfig && selectedServerConfigId != null) {
+                                        serverConfigs.find { it.id == selectedServerConfigId }?.username ?: username
+                                    } else {
+                                        username
+                                    }
+                                    val currentPassword = if (useExistingConfig && selectedServerConfigId != null) {
+                                        serverConfigs.find { it.id == selectedServerConfigId }?.password ?: password
+                                    } else {
+                                        password
+                                    }
+                                    val config = com.spotify.music.data.WebDavConfig(currentUrl, currentUsername, currentPassword)
+                                    coroutineScope.launch {
+                                        webDavClient.listAllResources(config, parentPath)
+                                            .onSuccess { (dirs, allRes) ->
+                                                directories = dirs
+                                                allResources = allRes
+                                            }
+                                            .onFailure { e ->
+                                                errorMessage = "Failed to load directories: ${e.message}"
+                                            }
+                                        isDirectoryLoading = false
+                                    }
                                 }
+                            }
+                        ) {
+                            Text("返回上级")
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            currentBrowsingPath?.let { path ->
+                                directoryUrl = path
+                                if (name.isBlank()) {
+                                    val folderName = path.trimEnd('/').substringAfterLast('/')
+                                    name = folderName
+                                }
+                            }
+                            directoryPickerVisible = false
+                            currentBrowsingPath = null
+                            pathHistory = emptyList()
+                            allResources = emptyList()
+                        },
+                        enabled = currentBrowsingPath != null
+                    ) {
+                        Text("确认选择")
+                    }
+                }
+            },
+            title = { 
+                Column {
+                    Text("选择文件夹")
+                    currentBrowsingPath?.let { path ->
+                        Text(
+                            text = path,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+            },
+            text = {
+                if (isDirectoryLoading) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            text = "加载中...",
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                } else {
+                    LazyColumn {
+                        // 显示文件夹（可点击）
+                        items(directories.size) { index ->
+                            val dir = directories[index]
+                            val displayName = dir.name.ifBlank { dir.path }
+                            ListItem(
+                                headlineContent = { Text(displayName) },
+                                leadingContent = { Text("📁") },
+                                trailingContent = { Text("▶") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
+                                            serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
+                                        } else {
+                                            url
+                                        }
+                                        val currentUsername = if (useExistingConfig && selectedServerConfigId != null) {
+                                            serverConfigs.find { it.id == selectedServerConfigId }?.username ?: username
+                                        } else {
+                                            username
+                                        }
+                                        val currentPassword = if (useExistingConfig && selectedServerConfigId != null) {
+                                            serverConfigs.find { it.id == selectedServerConfigId }?.password ?: password
+                                        } else {
+                                            password
+                                        }
+                                        
+                                        val newPath = (currentBrowsingPath?.trimEnd('/') + "/" + dir.name.trim('/')).trimEnd('/')
+                                        currentBrowsingPath = newPath
+                                        pathHistory = pathHistory + newPath
+                                        
+                                        isDirectoryLoading = true
+                                        val config = com.spotify.music.data.WebDavConfig(currentUrl, currentUsername, currentPassword)
+                                        coroutineScope.launch {
+                                            webDavClient.listAllResources(config, newPath)
+                                                .onSuccess { (dirs, allRes) ->
+                                                    directories = dirs
+                                                    allResources = allRes
+                                                }
+                                                .onFailure { e ->
+                                                    errorMessage = "Failed to load directories: ${e.message}"
+                                                    // 如果加载失败，回退到上一级
+                                                    if (pathHistory.size > 1) {
+                                                        pathHistory = pathHistory.dropLast(1)
+                                                        currentBrowsingPath = pathHistory.last()
+                                                    }
+                                                }
+                                            isDirectoryLoading = false
+                                        }
+                                    }
+                            )
+                        }
+                        
+                        // 显示文件（不可点击，仅供查看）
+                        val files = allResources.filter { !it.isDirectory }
+                        items(files.size) { index ->
+                            val file = files[index]
+                            val displayName = file.name.ifBlank { file.path }
+                            val fileExtension = displayName.substringAfterLast('.', "").lowercase()
+                            val fileIcon = when {
+                                fileExtension in setOf("mp3", "m4a", "flac", "wav", "ogg", "aac", "wma") -> "🎵"
+                                fileExtension in setOf("jpg", "jpeg", "png", "webp") -> "🖼️"
+                                fileExtension in setOf("txt", "md") -> "📄"
+                                else -> "📄"
+                            }
+                            ListItem(
+                                headlineContent = { 
+                                    Text(
+                                        text = displayName,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    ) 
+                                },
+                                leadingContent = { Text(fileIcon) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
                 }
             }

@@ -113,6 +113,20 @@ class WebDavClient {
         }
     }
     
+    suspend fun listAllResources(config: WebDavConfig, basePath: String? = null): Result<Pair<List<DavResource>, List<DavResource>>> = withContext(Dispatchers.IO) {
+        try {
+            val sardine: Sardine = OkHttpSardine()
+            sardine.setCredentials(config.username, config.password)
+            val baseUrl = (basePath ?: config.url).trimEnd('/')
+            val resources = sardine.list(baseUrl)
+            val directories = resources.filter { it.isDirectory }
+            val allResources = resources
+            Result.success(Pair(directories, allResources))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
     suspend fun findCoverImage(config: WebDavConfig, directoryUrl: String): Result<ByteArray?> = withContext(Dispatchers.IO) {
         try {
             val sardine: Sardine = OkHttpSardine()
