@@ -30,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.spotify.music.data.Album
+import com.spotify.music.player.PlaylistStateController
+import com.spotify.music.ui.BottomPlayerBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +40,7 @@ fun AlbumListScreen(
     onSelect: (Album) -> Unit,
     onCreate: (Album, String?) -> Unit,
     onDelete: (Album) -> Unit,
+    playlistController: PlaylistStateController,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -67,6 +70,24 @@ fun AlbumListScreen(
     } else {
         Scaffold(
             topBar = { TopAppBar(title = { Text("Albums") }) },
+            bottomBar = {
+                BottomPlayerBar(
+                    playlistState = playlistController.state,
+                    onPlayPause = {
+                        if (playlistController.state.isPlaying) {
+                            playlistController.pause()
+                        } else {
+                            playlistController.play()
+                        }
+                    },
+                    onNext = {
+                        playlistController.seekToNext()
+                    },
+                    onPrevious = {
+                        playlistController.seekToPrevious()
+                    }
+                )
+            },
             modifier = modifier
         ) { paddingValues ->
             Box(

@@ -85,6 +85,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                 albums = updated
                 com.spotify.music.data.AlbumsRepository.save(context, updated)
             },
+            playlistController = playlistController,
             modifier = modifier
         )
     } else {
