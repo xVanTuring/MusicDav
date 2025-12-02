@@ -13,7 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.spotify.music.ui.screen.AlbumListScreen
-import com.spotify.music.ui.screen.MusicPlayerScreen
+import com.spotify.music.ui.screen.AlbumDetailScreen
 import com.spotify.music.ui.theme.MusicDavTheme
 
 class MainActivity : ComponentActivity() {
@@ -82,7 +82,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
             modifier = modifier
         )
     } else {
-        MusicPlayerScreen(
+        AlbumDetailScreen(
             album = selectedAlbum!!,
             onBack = { selectedAlbum = null },
             modifier = modifier

@@ -35,7 +35,7 @@ import kotlinx.coroutines.isActive
 import java.util.concurrent.atomic.AtomicReference
 
 @Composable
-fun MusicPlayerScreen(
+fun AlbumDetailScreen(
     album: Album,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
