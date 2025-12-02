@@ -12,6 +12,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.spotify.music.player.rememberNotificationPermissionState
+import com.spotify.music.player.rememberPlaylistStateController
 import com.spotify.music.ui.screen.AlbumListScreen
 import com.spotify.music.ui.screen.AlbumDetailScreen
 import com.spotify.music.ui.theme.MusicDavTheme
@@ -33,7 +35,11 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var albums by remember { mutableStateOf(com.spotify.music.data.AlbumsRepository.load(context)) }
     var selectedAlbum by remember { mutableStateOf<com.spotify.music.data.Album?>(null) }
-    
+    val playlistController = rememberPlaylistStateController()
+
+    // 处理通知权限
+    rememberNotificationPermissionState()
+
     // 在主页面的返回键处理：双击退出
     var lastBackPressTime by remember { mutableStateOf(0L) }
     androidx.activity.compose.BackHandler(enabled = selectedAlbum == null) {
@@ -47,7 +53,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
             android.widget.Toast.makeText(context, "再按一次退出应用", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
-    
+
     if (selectedAlbum == null) {
         AlbumListScreen(
             albums = albums,
@@ -59,7 +65,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                 selectedAlbum = album
             },
             onDelete = { album ->
-                val updated = albums.filterNot { 
+                val updated = albums.filterNot {
                     val itConfig = if (it.serverConfigId != null) {
                         com.spotify.music.data.ServerConfigRepository.load(context)
                             .find { config -> config.id == it.serverConfigId }
@@ -85,6 +91,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
         AlbumDetailScreen(
             album = selectedAlbum!!,
             onBack = { selectedAlbum = null },
+            playlistController = playlistController,
             modifier = modifier
         )
     }

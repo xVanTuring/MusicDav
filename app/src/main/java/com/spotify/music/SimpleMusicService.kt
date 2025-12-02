@@ -29,12 +29,20 @@ class SimpleMusicService : MediaSessionService() {
         private var staticUsername: String? = null
         private var staticPassword: String? = null
         private var instance: SimpleMusicService? = null
-        
+
         fun setCredentials(username: String, password: String) {
             staticUsername = username
             staticPassword = password
             // Update existing instance if available
             instance?.updateCredentials(username, password)
+        }
+
+        fun setPlaylist(mediaItems: List<MediaItem>) {
+            instance?.setPlaylist(mediaItems)
+        }
+
+        fun playAt(index: Int) {
+            instance?.playAt(index)
         }
     }
 
@@ -78,23 +86,35 @@ class SimpleMusicService : MediaSessionService() {
     private fun updateCredentials(username: String, password: String) {
         // 检查 credentials 是否真的改变了
         if (webDavUsername == username && webDavPassword == password) {
-            // credentials 相同，只需要更新 auth headers（如果还没有设置）
+            // credentials 相同，只更新 auth headers
             updateAuthHeaders()
             return
         }
-        
+
+        // 只有在 credentials 真正改变时才重新创建 player
+        // 但是如果没有播放内容，就不重新创建（避免破坏现有的 MediaController 连接）
+        val hasMediaContent = player?.let { it.mediaItemCount > 0 } ?: false
+
+        if (!hasMediaContent) {
+            // 没有媒体内容时，只更新 headers，不重新创建 player
+            webDavUsername = username
+            webDavPassword = password
+            updateAuthHeaders()
+            return
+        }
+
+        // 有媒体内容且 credentials 改变了，需要重新创建 player
         webDavUsername = username
         webDavPassword = password
         updateAuthHeaders()
-        
-        // 只有在 credentials 真正改变时才重新创建 player
+
         player?.let { existingPlayer ->
             val currentPosition = existingPlayer.currentPosition
             val currentIndex = existingPlayer.currentMediaItemIndex
             val wasPlaying = existingPlayer.isPlaying
             val mediaItems = mutableListOf<MediaItem>()
             for (i in 0 until existingPlayer.mediaItemCount) {
-                existingPlayer.getMediaItemAt(i)?.let { mediaItems.add(it) }
+                existingPlayer.getMediaItemAt(i).let { mediaItems.add(it) }
             }
             
             // Release old player

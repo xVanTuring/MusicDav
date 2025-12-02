@@ -34,7 +34,7 @@ fun BottomPlayerBar(
     onPrevious: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (playlistState.currentSong == null) return
+//    if (playlistState.currentSong == null) return
     
     Surface(
         modifier = modifier.fillMaxWidth(),
