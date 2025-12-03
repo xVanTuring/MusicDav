@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Traffic
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -69,7 +70,19 @@ fun AlbumListScreen(
         )
     } else {
         Scaffold(
-            topBar = { TopAppBar(title = { Text("Albums") }) },
+            topBar = {
+                TopAppBar(
+                    title = { Text("Albums") },
+                    actions = {
+                        IconButton(onClick = { creating = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add Album"
+                            )
+                        }
+                    }
+                )
+            },
             bottomBar = {
                 BottomPlayerBar(
                     playlistState = playlistController.state,
@@ -148,14 +161,6 @@ fun AlbumListScreen(
                                 }
                             }
                         }
-                    }
-                    Button(
-                        onClick = { creating = true },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 16.dp)
-                    ) {
-                        Text("Add Album")
                     }
                 }
             }
