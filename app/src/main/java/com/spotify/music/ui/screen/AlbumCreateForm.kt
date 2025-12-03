@@ -100,10 +100,12 @@ fun AlbumCreateForm(
     var serverConfigs by remember { mutableStateOf(ServerConfigRepository.load(context)) }
     var selectedServerConfigId by remember { mutableStateOf<String?>(null) }
     var useExistingConfig by remember { mutableStateOf(false) }
+    var isInitializingEdit by remember { mutableStateOf(false) }
 
     // Initialize form with editing album data
     LaunchedEffect(editingAlbum) {
         editingAlbum?.let { album ->
+            isInitializingEdit = true
             name = album.name
             directoryUrl = album.directoryUrl
             manuallySelectedCoverImageUrl = album.coverImageUrl
@@ -125,6 +127,9 @@ fun AlbumCreateForm(
                 username = album.config.username
                 password = album.config.password
             }
+            // 延迟重置初始化标志，确保 serverConfig 的 LaunchedEffect 不会重置数据
+            kotlinx.coroutines.delay(100)
+            isInitializingEdit = false
         }
     }
 
@@ -162,13 +167,16 @@ fun AlbumCreateForm(
     // When a server config is selected, populate the fields
     LaunchedEffect(selectedServerConfigId) {
         selectedServerConfigId?.let { id ->
-            val config = serverConfigs.find { it.id == id }
-            config?.let {
-                url = it.url
-                username = it.username
-                password = it.password
-                directoryUrl = null  // Reset directory when config changes
-                manuallySelectedCoverImageUrl = null  // Reset cover image when config changes
+            // 只有在非初始化状态下才重置数据
+            if (!isInitializingEdit) {
+                val config = serverConfigs.find { it.id == id }
+                config?.let {
+                    url = it.url
+                    username = it.username
+                    password = it.password
+                    directoryUrl = null  // Reset directory when config changes
+                    manuallySelectedCoverImageUrl = null  // Reset cover image when config changes
+                }
             }
         }
     }
