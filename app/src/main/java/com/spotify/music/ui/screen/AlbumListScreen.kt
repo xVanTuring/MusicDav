@@ -2,6 +2,7 @@ package com.spotify.music.ui.screen
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,7 +16,9 @@ import androidx.compose.material.icons.filled.Traffic
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,7 +37,7 @@ import com.spotify.music.data.Album
 import com.spotify.music.player.PlaylistStateController
 import com.spotify.music.ui.BottomPlayerBar
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AlbumListScreen(
     albums: List<Album>,
@@ -46,7 +49,8 @@ fun AlbumListScreen(
 ) {
     val context = LocalContext.current
     var creating by remember { mutableStateOf(false) }
-    
+    var selectedAlbumForDelete by remember { mutableStateOf<Album?>(null) }
+
     // 拦截返回键，如果在创建页面则返回列表页面
     BackHandler(enabled = creating) {
         creating = false
@@ -119,7 +123,10 @@ fun AlbumListScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 8.dp)
-                                .clickable { onSelect(album) },
+                                .combinedClickable(
+                                    onClick = { onSelect(album) },
+                                    onLongClick = { selectedAlbumForDelete = album }
+                                ),
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surfaceVariant
                             )
@@ -151,17 +158,34 @@ fun AlbumListScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                IconButton(
-                                    onClick = { onDelete(album) }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Traffic,
-                                        contentDescription = "Delete Album"
-                                    )
-                                }
                             }
                         }
                     }
+                }
+
+                selectedAlbumForDelete?.let { album ->
+                    AlertDialog(
+                        onDismissRequest = { selectedAlbumForDelete = null },
+                        title = { Text("Delete Album") },
+                        text = { Text("Are you sure you want to delete album \"${album.name}\"?") },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    onDelete(album)
+                                    selectedAlbumForDelete = null
+                                }
+                            ) {
+                                Text("Delete")
+                            }
+                        },
+                        dismissButton = {
+                            Button(
+                                onClick = { selectedAlbumForDelete = null }
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
                 }
             }
         }
