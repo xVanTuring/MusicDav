@@ -106,7 +106,15 @@ class WebDavClient {
             sardine.setCredentials(config.username, config.password)
             val baseUrl = (basePath ?: config.url).trimEnd('/')
             val resources = sardine.list(baseUrl)
-            val directories = resources.filter { it.isDirectory }
+
+            // 过滤掉当前目录自身
+            val filteredResources = resources.filter { resource ->
+                val resourcePath = resource.path.trimEnd('/')
+                val baseUrlPath = baseUrl.trimEnd('/')
+                resourcePath != baseUrlPath && resource.name != "."
+            }
+
+            val directories = filteredResources.filter { it.isDirectory }
             Result.success(directories)
         } catch (e: Exception) {
             Result.failure(e)
@@ -119,10 +127,43 @@ class WebDavClient {
             sardine.setCredentials(config.username, config.password)
             val baseUrl = (basePath ?: config.url).trimEnd('/')
             val resources = sardine.list(baseUrl)
-            val directories = resources.filter { it.isDirectory }
-            val allResources = resources
+
+            Log.d("WebDavClient", "Base URL: $baseUrl")
+            Log.d("WebDavClient", "Total resources: ${resources.size}")
+            resources.forEachIndexed { index, resource ->
+                Log.d("WebDavClient", "Resource $index: path=${resource.path}, name=${resource.name}, isDir=${resource.isDirectory}")
+            }
+
+            // 过滤掉当前目录自身（通常是 . 或与 baseUrl 相同的路径）
+            val filteredResources = resources.filter { resource ->
+                val resourcePath = resource.path.trimEnd('/')
+                val baseUrlPath = baseUrl.trimEnd('/')
+
+                // 检查是否是当前目录本身
+                val isCurrentDirectory = (
+                    resourcePath == baseUrlPath ||
+                    resource.name == "." ||
+                    (baseUrl.endsWith('/') && resourcePath == baseUrl.dropLast(1)) ||
+                    (!baseUrl.endsWith('/') && resourcePath == baseUrl + "/")
+                )
+
+                val shouldKeep = !isCurrentDirectory && resource.name.isNotEmpty()
+
+                if (isCurrentDirectory) {
+                    Log.d("WebDavClient", "Filtering out current directory: path=${resource.path}, name=${resource.name}")
+                    Log.d("WebDavClient", "Current directory check: resourcePath='$resourcePath', baseUrlPath='$baseUrlPath'")
+                }
+
+                shouldKeep
+            }
+
+            Log.d("WebDavClient", "Filtered resources: ${filteredResources.size}")
+
+            val directories = filteredResources.filter { it.isDirectory }
+            val allResources = filteredResources
             Result.success(Pair(directories, allResources))
         } catch (e: Exception) {
+            Log.e("WebDavClient", "Error listing resources", e)
             Result.failure(e)
         }
     }
