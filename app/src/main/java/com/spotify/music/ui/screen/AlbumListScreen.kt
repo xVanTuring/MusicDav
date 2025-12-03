@@ -189,33 +189,36 @@ fun AlbumGridItem(
             .set("Authorization", Credentials.basic(webDavConfig.username, webDavConfig.password))
             .build()
 
-        if (album.coverImageUrl != null) {
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(album.coverImageUrl)
-                    .httpHeaders(headers)
-                    .crossfade(true)
-                    .placeholder(android.R.drawable.star_on)
-                    .error(android.R.drawable.star_on)
-                    .listener(
-                        onError = {request, throwable->
-                            Log.e("IMAGE_LOAD", "Load error: $throwable")
-                        }
-                    )
-                    .build(),
-                contentDescription = album.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-            )
-        } else {
-            AsyncImage(
-                model = android.R.drawable.ic_menu_gallery,
-                contentDescription = album.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-            )
+        // Default album background with Album icon
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            if (album.coverImageUrl != null) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(album.coverImageUrl)
+                        .httpHeaders(headers)
+                        .crossfade(true)
+                        .listener(
+                            onError = {_, throwable->
+                                Log.e("IMAGE_LOAD", "Load error: $throwable")
+                            }
+                        )
+                        .build(),
+                    contentDescription = album.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                // Default album icon background
+                Icon(
+                    imageVector = Icons.Default.Album,
+                    contentDescription = "Default Album Cover",
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         // 专辑名显示在封面左下角
