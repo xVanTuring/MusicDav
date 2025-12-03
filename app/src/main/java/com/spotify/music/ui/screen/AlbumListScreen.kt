@@ -1,7 +1,6 @@
 package com.spotify.music.ui.screen
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Traffic
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,8 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.spotify.music.data.Album
-import com.spotify.music.player.PlaylistStateController
-import com.spotify.music.ui.BottomPlayerBar
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -44,7 +40,7 @@ fun AlbumListScreen(
     onSelect: (Album) -> Unit,
     onCreate: (Album, String?) -> Unit,
     onDelete: (Album) -> Unit,
-    playlistController: PlaylistStateController,
+    onAddButtonClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -52,11 +48,11 @@ fun AlbumListScreen(
     var selectedAlbumForDelete by remember { mutableStateOf<Album?>(null) }
 
     // 拦截返回键，如果在创建页面则返回列表页面
-    BackHandler(enabled = creating) {
+    BackHandler(enabled = onAddButtonClick == null && creating) {
         creating = false
     }
-    
-    if (creating) {
+
+    if (onAddButtonClick == null && creating) {
         AlbumCreateForm(
             onCancel = { creating = false },
             onSave = { name, url, username, password, directoryUrl, coverImageBase64, serverConfigId ->
@@ -78,30 +74,14 @@ fun AlbumListScreen(
                 TopAppBar(
                     title = { Text("Albums") },
                     actions = {
-                        IconButton(onClick = { creating = true }) {
+                        IconButton(onClick = {
+                            onAddButtonClick?.invoke() ?: run { creating = true }
+                        }) {
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "Add Album"
                             )
                         }
-                    }
-                )
-            },
-            bottomBar = {
-                BottomPlayerBar(
-                    playlistState = playlistController.state,
-                    onPlayPause = {
-                        if (playlistController.state.isPlaying) {
-                            playlistController.pause()
-                        } else {
-                            playlistController.play()
-                        }
-                    },
-                    onNext = {
-                        playlistController.seekToNext()
-                    },
-                    onPrevious = {
-                        playlistController.seekToPrevious()
                     }
                 )
             },
@@ -162,6 +142,7 @@ fun AlbumListScreen(
                         }
                     }
                 }
+
 
                 selectedAlbumForDelete?.let { album ->
                     AlertDialog(
