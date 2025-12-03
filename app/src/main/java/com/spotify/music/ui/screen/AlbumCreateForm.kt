@@ -68,12 +68,19 @@ fun AlbumCreateForm(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var submitCounter by remember { mutableStateOf(0) }
     var directoryUrl by remember { mutableStateOf<String?>(null) }
+    var manuallySelectedCoverImageUrl by remember { mutableStateOf<String?>(null) }
     var directoryPickerVisible by remember { mutableStateOf(false) }
+    var coverPickerVisible by remember { mutableStateOf(false) }
     var directories by remember { mutableStateOf<List<com.thegrizzlylabs.sardineandroid.DavResource>>(emptyList()) }
     var allResources by remember { mutableStateOf<List<com.thegrizzlylabs.sardineandroid.DavResource>>(emptyList()) }
     var isDirectoryLoading by remember { mutableStateOf(false) }
+    var isCoverLoading by remember { mutableStateOf(false) }
     var currentBrowsingPath by remember { mutableStateOf<String?>(null) }
     var pathHistory by remember { mutableStateOf<List<String>>(emptyList()) }
+    var coverDirectories by remember { mutableStateOf<List<com.thegrizzlylabs.sardineandroid.DavResource>>(emptyList()) }
+    var coverAllResources by remember { mutableStateOf<List<com.thegrizzlylabs.sardineandroid.DavResource>>(emptyList()) }
+    var coverCurrentBrowsingPath by remember { mutableStateOf<String?>(null) }
+    var coverPathHistory by remember { mutableStateOf<List<String>>(emptyList()) }
     val webDavClient = remember { WebDavClient() }
     val coroutineScope = rememberCoroutineScope()
     
@@ -86,6 +93,7 @@ fun AlbumCreateForm(
     BackHandler {
         when {
             directoryPickerVisible -> directoryPickerVisible = false
+            coverPickerVisible -> coverPickerVisible = false
             else -> onCancel()
         }
     }
@@ -100,6 +108,7 @@ fun AlbumCreateForm(
                 username = it.username
                 password = it.password
                 directoryUrl = null  // Reset directory when config changes
+                manuallySelectedCoverImageUrl = null  // Reset cover image when config changes
             }
         }
     }
@@ -138,6 +147,7 @@ fun AlbumCreateForm(
                         url = ""
                         username = ""
                         password = ""
+                        manuallySelectedCoverImageUrl = null
                     }
                 }
             )
@@ -192,7 +202,7 @@ fun AlbumCreateForm(
             // Manual input fields
             OutlinedTextField(
                 value = url,
-                onValueChange = { url = it; errorMessage = null; directoryUrl = null },
+                onValueChange = { url = it; errorMessage = null; directoryUrl = null; manuallySelectedCoverImageUrl = null },
                 label = { Text("WebDAV URL") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -200,7 +210,7 @@ fun AlbumCreateForm(
             )
             OutlinedTextField(
                 value = username,
-                onValueChange = { username = it; errorMessage = null },
+                onValueChange = { username = it; errorMessage = null; manuallySelectedCoverImageUrl = null },
                 label = { Text("Username") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -208,7 +218,7 @@ fun AlbumCreateForm(
             )
             OutlinedTextField(
                 value = password,
-                onValueChange = { password = it; errorMessage = null },
+                onValueChange = { password = it; errorMessage = null; manuallySelectedCoverImageUrl = null },
                 label = { Text("Password") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -241,99 +251,170 @@ fun AlbumCreateForm(
                 modifier = Modifier.padding(top = 8.dp)
             )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        if (manuallySelectedCoverImageUrl != null) {
+            val fileName = manuallySelectedCoverImageUrl!!.trimEnd('/').substringAfterLast('/')
+            Text(
+                text = "Selected cover image: $fileName",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Button(
-                onClick = {
-                    val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
-                        serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
-                    } else {
-                        url
-                    }
-                    val currentUsername = if (useExistingConfig && selectedServerConfigId != null) {
-                        serverConfigs.find { it.id == selectedServerConfigId }?.username ?: username
-                    } else {
-                        username
-                    }
-                    val currentPassword = if (useExistingConfig && selectedServerConfigId != null) {
-                        serverConfigs.find { it.id == selectedServerConfigId }?.password ?: password
-                    } else {
-                        password
-                    }
-                    
-                    if (currentUrl.isBlank() || currentUsername.isBlank() || currentPassword.isBlank()) {
-                        errorMessage = "Please fill in URL, username and password"
-                        return@Button
-                    }
-                    isDirectoryLoading = true
-                    errorMessage = null
-                    val config = com.spotify.music.data.WebDavConfig(currentUrl, currentUsername, currentPassword)
-                    coroutineScope.launch {
-                        webDavClient.listAllResources(config)
-                            .onSuccess { (dirs, allRes) ->
-                                directories = dirs
-                                allResources = allRes
-                                currentBrowsingPath = currentUrl
-                                pathHistory = listOf(currentUrl)
-                                directoryPickerVisible = true
-                            }
-                            .onFailure { e ->
-                                errorMessage = "Failed to load directories: ${e.message}"
-                            }
-                        isDirectoryLoading = false
-                    }
-                },
-                enabled = !isLoading && !isDirectoryLoading
+            // 第一行：文件夹和封面按钮
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (isDirectoryLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.padding(end = 8.dp),
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
+                Button(
+                    onClick = {
+                        val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
+                            serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
+                        } else {
+                            url
+                        }
+                        val currentUsername = if (useExistingConfig && selectedServerConfigId != null) {
+                            serverConfigs.find { it.id == selectedServerConfigId }?.username ?: username
+                        } else {
+                            username
+                        }
+                        val currentPassword = if (useExistingConfig && selectedServerConfigId != null) {
+                            serverConfigs.find { it.id == selectedServerConfigId }?.password ?: password
+                        } else {
+                            password
+                        }
+
+                        if (currentUrl.isBlank() || currentUsername.isBlank() || currentPassword.isBlank()) {
+                            errorMessage = "Please fill in URL, username and password"
+                            return@Button
+                        }
+                        isDirectoryLoading = true
+                        errorMessage = null
+                        val config = com.spotify.music.data.WebDavConfig(currentUrl, currentUsername, currentPassword)
+                        coroutineScope.launch {
+                            webDavClient.listAllResources(config)
+                                .onSuccess { (dirs, allRes) ->
+                                    directories = dirs
+                                    allResources = allRes
+                                    currentBrowsingPath = currentUrl
+                                    pathHistory = listOf(currentUrl)
+                                    directoryPickerVisible = true
+                                }
+                                .onFailure { e ->
+                                    errorMessage = "Failed to load directories: ${e.message}"
+                                }
+                            isDirectoryLoading = false
+                        }
+                    },
+                    enabled = !isLoading && !isDirectoryLoading
+                ) {
+                    if (isDirectoryLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(end = 8.dp),
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                    Text("Choose Folder")
                 }
-                Text("Choose Folder")
+                Button(
+                    onClick = {
+                        val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
+                            serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
+                        } else {
+                            url
+                        }
+                        val currentUsername = if (useExistingConfig && selectedServerConfigId != null) {
+                            serverConfigs.find { it.id == selectedServerConfigId }?.username ?: username
+                        } else {
+                            username
+                        }
+                        val currentPassword = if (useExistingConfig && selectedServerConfigId != null) {
+                            serverConfigs.find { it.id == selectedServerConfigId }?.password ?: password
+                        } else {
+                            password
+                        }
+
+                        if (currentUrl.isBlank() || currentUsername.isBlank() || currentPassword.isBlank()) {
+                            errorMessage = "Please fill in URL, username and password"
+                            return@Button
+                        }
+                        isCoverLoading = true
+                        errorMessage = null
+                        val config = com.spotify.music.data.WebDavConfig(currentUrl, currentUsername, currentPassword)
+                        val startPath = directoryUrl ?: currentUrl
+                        coroutineScope.launch {
+                            webDavClient.listAllResources(config, startPath)
+                                .onSuccess { (dirs, allRes) ->
+                                    coverDirectories = dirs
+                                    coverAllResources = allRes
+                                    coverCurrentBrowsingPath = startPath
+                                    coverPathHistory = listOf(startPath)
+                                    coverPickerVisible = true
+                                }
+                                .onFailure { e ->
+                                    errorMessage = "Failed to load directories: ${e.message}"
+                                }
+                            isCoverLoading = false
+                        }
+                    },
+                    enabled = !isLoading && !isCoverLoading
+                ) {
+                    if (isCoverLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(end = 8.dp),
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                    Text("Choose Cover")
+                }
             }
-            Button(
-                onClick = {
-                    val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
-                        serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
-                    } else {
-                        url
-                    }
-                    val currentUsername = if (useExistingConfig && selectedServerConfigId != null) {
-                        serverConfigs.find { it.id == selectedServerConfigId }?.username ?: username
-                    } else {
-                        username
-                    }
-                    val currentPassword = if (useExistingConfig && selectedServerConfigId != null) {
-                        serverConfigs.find { it.id == selectedServerConfigId }?.password ?: password
-                    } else {
-                        password
-                    }
-                    
-                    if (name.isBlank() || currentUrl.isBlank() || currentUsername.isBlank() || currentPassword.isBlank()) {
-                        errorMessage = "Please fill in all fields"
-                        return@Button
-                    }
-                    if (directoryUrl == null) {
-                        errorMessage = "Please choose a folder"
-                        return@Button
-                    }
-                    isLoading = true
-                    errorMessage = null
-                    submitCounter++
-                },
-                enabled = !isLoading
+
+            // 第二行：保存按钮
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.padding(end = 8.dp),
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
+                Button(
+                    onClick = {
+                        val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
+                            serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
+                        } else {
+                            url
+                        }
+                        val currentUsername = if (useExistingConfig && selectedServerConfigId != null) {
+                            serverConfigs.find { it.id == selectedServerConfigId }?.username ?: username
+                        } else {
+                            username
+                        }
+                        val currentPassword = if (useExistingConfig && selectedServerConfigId != null) {
+                            serverConfigs.find { it.id == selectedServerConfigId }?.password ?: password
+                        } else {
+                            password
+                        }
+
+                        if (name.isBlank() || currentUrl.isBlank() || currentUsername.isBlank() || currentPassword.isBlank()) {
+                            errorMessage = "Please fill in all fields"
+                            return@Button
+                        }
+                        if (directoryUrl == null) {
+                            errorMessage = "Please choose a folder"
+                            return@Button
+                        }
+                        isLoading = true
+                        errorMessage = null
+                        submitCounter++
+                    },
+                    enabled = !isLoading
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(end = 8.dp),
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                    Text(if (isLoading) "Saving..." else "Save")
                 }
-                Text(if (isLoading) "Saving..." else "Save")
             }
         }
         }
@@ -363,13 +444,14 @@ fun AlbumCreateForm(
                 .onSuccess {
                     val coverResult = webDavClient.findCoverImageUrl(config, targetUrl)
                     val coverUrl = coverResult.getOrNull()
+                    val finalCoverUrl = manuallySelectedCoverImageUrl ?: coverUrl
                     isLoading = false
                     val finalServerConfigId = if (useExistingConfig) selectedServerConfigId else null
                     if (name.isBlank()) {
                         val folderName = targetUrl.trimEnd('/').substringAfterLast('/')
-                        onSave(folderName, currentUrl, currentUsername, currentPassword, targetUrl, coverUrl, finalServerConfigId)
+                        onSave(folderName, currentUrl, currentUsername, currentPassword, targetUrl, finalCoverUrl, finalServerConfigId)
                     } else {
-                        onSave(name, currentUrl, currentUsername, currentPassword, targetUrl, coverUrl, finalServerConfigId)
+                        onSave(name, currentUrl, currentUsername, currentPassword, targetUrl, finalCoverUrl, finalServerConfigId)
                     }
                 }
                 .onFailure { e ->
@@ -445,6 +527,15 @@ fun AlbumCreateForm(
                             Text("返回上级")
                         }
                     }
+                    if (manuallySelectedCoverImageUrl != null) {
+                        Button(
+                            onClick = {
+                                manuallySelectedCoverImageUrl = null
+                            }
+                        ) {
+                            Text("清除封面选择")
+                        }
+                    }
                     Button(
                         onClick = {
                             currentBrowsingPath?.let { path ->
@@ -465,14 +556,15 @@ fun AlbumCreateForm(
                     }
                 }
             },
-            title = { 
+            title = {
                 Column {
                     Text("选择文件夹")
                     currentBrowsingPath?.let { path ->
                         Text(
                             text = path,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
                 }
@@ -556,12 +648,13 @@ fun AlbumCreateForm(
                                 fileExtension in setOf("txt", "md") -> "📄"
                                 else -> "📄"
                             }
+
                             ListItem(
-                                headlineContent = { 
+                                headlineContent = {
                                     Text(
                                         text = displayName,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    ) 
+                                    )
                                 },
                                 leadingContent = { Text(fileIcon) },
                                 modifier = Modifier.fillMaxWidth()
@@ -572,5 +665,230 @@ fun AlbumCreateForm(
             }
         )
     }
-    
+
+    if (coverPickerVisible) {
+        AlertDialog(
+            onDismissRequest = {
+                coverPickerVisible = false
+                coverCurrentBrowsingPath = null
+                coverPathHistory = emptyList()
+                coverAllResources = emptyList()
+            },
+            confirmButton = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            coverPickerVisible = false
+                            coverCurrentBrowsingPath = null
+                            coverPathHistory = emptyList()
+                            coverAllResources = emptyList()
+                        }
+                    ) {
+                        Text("取消")
+                    }
+                    if (coverPathHistory.size > 1) {
+                        Button(
+                            onClick = {
+                                if (coverPathHistory.size > 1) {
+                                    val newHistory = coverPathHistory.dropLast(1)
+                                    coverPathHistory = newHistory
+                                    val parentPath = newHistory.last()
+                                    coverCurrentBrowsingPath = parentPath
+
+                                    isCoverLoading = true
+                                    val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
+                                        serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
+                                    } else {
+                                        url
+                                    }
+                                    val currentUsername = if (useExistingConfig && selectedServerConfigId != null) {
+                                        serverConfigs.find { it.id == selectedServerConfigId }?.username ?: username
+                                    } else {
+                                        username
+                                    }
+                                    val currentPassword = if (useExistingConfig && selectedServerConfigId != null) {
+                                        serverConfigs.find { it.id == selectedServerConfigId }?.password ?: password
+                                    } else {
+                                        password
+                                    }
+                                    val config = com.spotify.music.data.WebDavConfig(currentUrl, currentUsername, currentPassword)
+                                    coroutineScope.launch {
+                                        webDavClient.listAllResources(config, parentPath)
+                                            .onSuccess { (dirs, allRes) ->
+                                                coverDirectories = dirs
+                                                coverAllResources = allRes
+                                            }
+                                            .onFailure { e ->
+                                                errorMessage = "Failed to load directories: ${e.message}"
+                                            }
+                                        isCoverLoading = false
+                                    }
+                                }
+                            }
+                        ) {
+                            Text("返回上级")
+                        }
+                    }
+                    if (manuallySelectedCoverImageUrl != null) {
+                        Button(
+                            onClick = {
+                                manuallySelectedCoverImageUrl = null
+                            }
+                        ) {
+                            Text("清除封面选择")
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            coverPickerVisible = false
+                            coverCurrentBrowsingPath = null
+                            coverPathHistory = emptyList()
+                            coverAllResources = emptyList()
+                        },
+                        enabled = true
+                    ) {
+                        Text("确认选择")
+                    }
+                }
+            },
+            title = {
+                Column {
+                    Text("选择封面图片")
+                    Text(
+                        text = "点击图片文件可选择作为封面",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                    coverCurrentBrowsingPath?.let { path ->
+                        Text(
+                            text = path,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                    if (manuallySelectedCoverImageUrl != null) {
+                        val fileName = manuallySelectedCoverImageUrl!!.trimEnd('/').substringAfterLast('/')
+                        Text(
+                            text = "已选择封面: $fileName",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            },
+            text = {
+                if (isCoverLoading) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            text = "加载中...",
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                } else {
+                    LazyColumn {
+                        // 显示文件夹（可点击）
+                        items(coverDirectories.size) { index ->
+                            val dir = coverDirectories[index]
+                            val displayName = dir.name.ifBlank { dir.path }
+                            ListItem(
+                                headlineContent = { Text(displayName) },
+                                leadingContent = { Text("📁") },
+                                trailingContent = { Text("▶") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
+                                            serverConfigs.find { it.id == selectedServerConfigId }?.url ?: url
+                                        } else {
+                                            url
+                                        }
+                                        val currentUsername = if (useExistingConfig && selectedServerConfigId != null) {
+                                            serverConfigs.find { it.id == selectedServerConfigId }?.username ?: username
+                                        } else {
+                                            username
+                                        }
+                                        val currentPassword = if (useExistingConfig && selectedServerConfigId != null) {
+                                            serverConfigs.find { it.id == selectedServerConfigId }?.password ?: password
+                                        } else {
+                                            password
+                                        }
+
+                                        val newPath = (coverCurrentBrowsingPath?.trimEnd('/') + "/" + dir.name.trim('/')).trimEnd('/')
+                                        coverCurrentBrowsingPath = newPath
+                                        coverPathHistory = coverPathHistory + newPath
+
+                                        isCoverLoading = true
+                                        val config = com.spotify.music.data.WebDavConfig(currentUrl, currentUsername, currentPassword)
+                                        coroutineScope.launch {
+                                            webDavClient.listAllResources(config, newPath)
+                                                .onSuccess { (dirs, allRes) ->
+                                                    coverDirectories = dirs
+                                                    coverAllResources = allRes
+                                                }
+                                                .onFailure { e ->
+                                                    errorMessage = "Failed to load directories: ${e.message}"
+                                                    // 如果加载失败，回退到上一级
+                                                    if (coverPathHistory.size > 1) {
+                                                        coverPathHistory = coverPathHistory.dropLast(1)
+                                                        coverCurrentBrowsingPath = coverPathHistory.last()
+                                                    }
+                                                }
+                                            isCoverLoading = false
+                                        }
+                                    }
+                            )
+                        }
+
+                        // 显示文件（图片文件可点击选择作为封面）
+                        val files = coverAllResources.filter { !it.isDirectory }
+                        items(files.size) { index ->
+                            val file = files[index]
+                            val displayName = file.name.ifBlank { file.path }
+                            val fileExtension = displayName.substringAfterLast('.', "").lowercase()
+                            val fileIcon = when {
+                                fileExtension in setOf("mp3", "m4a", "flac", "wav", "ogg", "aac", "wma") -> "🎵"
+                                fileExtension in setOf("jpg", "jpeg", "png", "webp") -> "🖼️"
+                                fileExtension in setOf("txt", "md") -> "📄"
+                                else -> "📄"
+                            }
+                            val isImageFile = fileExtension in setOf("jpg", "jpeg", "png", "webp")
+                            val isSelectedCover = manuallySelectedCoverImageUrl == file.path
+
+                            ListItem(
+                                headlineContent = {
+                                    Text(
+                                        text = displayName,
+                                        color = if (isSelectedCover) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                leadingContent = { Text(fileIcon) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(if (isImageFile) Modifier.clickable {
+                                        if (isSelectedCover) {
+                                            // 取消选择
+                                            manuallySelectedCoverImageUrl = null
+                                        } else {
+                                            // 选择作为封面
+                                            manuallySelectedCoverImageUrl = file.path
+                                        }
+                                    } else Modifier)
+                            )
+                        }
+                    }
+                }
+            }
+        )
+    }
+
     }
