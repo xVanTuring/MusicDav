@@ -6,7 +6,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -175,74 +174,58 @@ fun AlbumGridItem(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1f)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
-            ),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            )
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            // 专辑封面
-           val webDavConfig = album.getWebDavConfig(context)
-            val headers = NetworkHeaders.Builder()
-                .set("Authorization", Credentials.basic(webDavConfig.username, webDavConfig.password))
-                .build()
-            if(album.coverImageUrl != null){
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(album.coverImageUrl)
-                        .httpHeaders(headers)
-                        .crossfade(true)
-                        .placeholder(android.R.drawable.ic_menu_gallery)
-                        .error(android.R.drawable.ic_menu_gallery)
-                        .build(),
-                    contentDescription = album.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                )
-            }else{
-                AsyncImage(model=android.R.drawable.ic_menu_gallery,
-                    contentDescription = album.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                )
-            }
-           // 使用Request.Builder添加Basic Authentication
+        // 专辑封面
+        val webDavConfig = album.getWebDavConfig(context)
+        val headers = NetworkHeaders.Builder()
+            .set("Authorization", Credentials.basic(webDavConfig.username, webDavConfig.password))
+            .build()
 
-
-
-
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 专辑名称
-            Text(
-                text = album.name,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
+        if (album.coverImageUrl != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(album.coverImageUrl)
+                    .httpHeaders(headers)
+                    .crossfade(true)
+                    .placeholder(android.R.drawable.ic_menu_gallery)
+                    .error(android.R.drawable.ic_menu_gallery)
+                    .build(),
+                contentDescription = album.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+            )
+        } else {
+            AsyncImage(
+                model = android.R.drawable.ic_menu_gallery,
+                contentDescription = album.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
             )
         }
+
+        // 专辑名显示在封面左下角
+        Text(
+            text = album.name,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurface
+            ),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Start,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(14.dp)
+                .fillMaxWidth()
+        )
     }
 }
