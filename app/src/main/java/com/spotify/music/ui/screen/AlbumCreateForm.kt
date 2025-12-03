@@ -595,7 +595,7 @@ fun AlbumCreateForm(
     FolderPickerDialog(
         isVisible = directoryPickerVisible,
         webDavConfig = currentWebDavConfig,
-        initialPath = currentWebDavConfig.url,
+        initialPath = directoryUrl ?: currentWebDavConfig.url,
         onDismiss = { directoryPickerVisible = false },
         onFolderSelected = { path ->
             directoryUrl = path
@@ -612,7 +612,7 @@ fun AlbumCreateForm(
     CoverImagePickerDialog(
         isVisible = coverPickerVisible,
         webDavConfig = currentWebDavConfig,
-        initialPath = currentWebDavConfig.url,
+        initialPath = directoryUrl ?: currentWebDavConfig.url,
         onDismiss = { coverPickerVisible = false },
         onCoverSelected = { coverPath ->
             manuallySelectedCoverImageUrl = coverPath

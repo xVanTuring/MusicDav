@@ -40,6 +40,124 @@ import androidx.compose.ui.unit.dp
 import com.spotify.music.data.WebDavConfig
 import com.spotify.music.webdav.WebDavClient
 import kotlinx.coroutines.launch
+import java.net.URL
+
+/**
+ * 解析WebDAV配置，获取基础URL（不含路径部分）
+ */
+private fun parseWebDavBaseUrl(webDavConfig: WebDavConfig): String {
+    val url = webDavConfig.url.trimEnd('/')
+    return try {
+        val urlObj = URL(url)
+        val baseUrl = "${urlObj.protocol}://${urlObj.host}"
+        if (urlObj.port != -1 && urlObj.port != urlObj.defaultPort) {
+            "$baseUrl:${urlObj.port}"
+        } else {
+            baseUrl
+        }
+    } catch (e: Exception) {
+        // 如果解析失败，返回原URL
+        url
+    }
+}
+
+/**
+ * 解析WebDAV配置，获取服务器根路径
+ */
+private fun parseWebDavRootPath(webDavConfig: WebDavConfig): String {
+    val url = webDavConfig.url.trimEnd('/')
+    return try {
+        val urlObj = URL(url)
+        urlObj.path.trimEnd('/')
+    } catch (e: Exception) {
+        // 如果解析失败，假设根路径为空
+        ""
+    }
+}
+
+/**
+ * 根据WebDAV配置和当前路径，生成完整的历史路径栈
+ */
+private fun generatePathHistory(webDavConfig: WebDavConfig, currentPath: String): List<String> {
+    val baseUrl = parseWebDavBaseUrl(webDavConfig)
+    val rootPath = parseWebDavRootPath(webDavConfig)
+    val normalizedCurrentPath = currentPath.trimEnd('/')
+
+    // 如果当前路径是完整的URL，提取路径部分
+    val currentPathOnly = if (normalizedCurrentPath.startsWith("http")) {
+        try {
+            URL(normalizedCurrentPath).path.trimEnd('/')
+        } catch (e: Exception) {
+            normalizedCurrentPath
+        }
+    } else {
+        normalizedCurrentPath
+    }
+
+    // 构建完整路径历史
+    val pathHistory = mutableListOf<String>()
+
+    // 首先添加WebDAV服务器根URL
+    if (rootPath.isNotEmpty()) {
+        pathHistory.add("$baseUrl$rootPath")
+    } else {
+        pathHistory.add(baseUrl)
+    }
+
+    // 如果当前路径和根路径不同，添加中间路径
+    if (currentPathOnly != rootPath) {
+        // 计算相对路径
+        val relativePath = if (rootPath.isNotEmpty()) {
+            currentPathOnly.removePrefix(rootPath).trimStart('/')
+        } else {
+            currentPathOnly.trimStart('/')
+        }
+
+        // 逐级添加路径
+        if (relativePath.isNotEmpty()) {
+            val pathSegments = relativePath.split("/").filter { it.isNotEmpty() }
+            var accumulatedPath = if (rootPath.isNotEmpty()) rootPath else ""
+
+            for (segment in pathSegments) {
+                accumulatedPath = "$accumulatedPath/$segment"
+                pathHistory.add("$baseUrl$accumulatedPath")
+            }
+        }
+    }
+
+    return pathHistory.distinct()
+}
+
+/**
+ * 计算上级目录路径
+ */
+private fun calculateParentPath(webDavConfig: WebDavConfig, currentPath: String): String? {
+    val pathHistory = generatePathHistory(webDavConfig, currentPath)
+    return if (pathHistory.size > 1) {
+        pathHistory[pathHistory.size - 2]
+    } else {
+        null // 已经是根目录
+    }
+}
+
+/**
+ * 标准化路径，确保使用完整URL格式
+ */
+private fun normalizePath(webDavConfig: WebDavConfig, path: String): String {
+    val normalizedPath = path.trimEnd('/')
+    return if (normalizedPath.startsWith("http")) {
+        normalizedPath
+    } else {
+        // 相对路径，需要补充为完整URL
+        val baseUrl = parseWebDavBaseUrl(webDavConfig)
+        val rootPath = parseWebDavRootPath(webDavConfig)
+        if (rootPath.isNotEmpty()) {
+            "$baseUrl$rootPath/$normalizedPath".trimEnd('/')
+        } else {
+            "$baseUrl/$normalizedPath".trimEnd('/')
+        }
+    }
+}
 
 enum class FilePickerMode {
     DIRECTORY_ONLY,    // 只能选择目录
@@ -99,11 +217,12 @@ fun FilePickerDialog(
     LaunchedEffect(isVisible) {
         if (isVisible && currentBrowsingPath == null) {
             isLoading = true
-            currentBrowsingPath = initialPath
-            pathHistory = listOf(initialPath)
+            val normalizedInitialPath = normalizePath(webDavConfig, initialPath)
+            currentBrowsingPath = normalizedInitialPath
+            pathHistory = generatePathHistory(webDavConfig, normalizedInitialPath)
 
             coroutineScope.launch {
-                webDavClient.listAllResources(webDavConfig, initialPath)
+                webDavClient.listAllResources(webDavConfig, normalizedInitialPath)
                     .onSuccess { (dirs, allRes) ->
                         directories = dirs
                         allResources = allRes
@@ -226,7 +345,8 @@ fun FilePickerDialog(
                 } else {
                     LazyColumn {
                         // 显示 "../" 返回上级目录项
-                        if (pathHistory.size > 1) {
+                        val canGoUp = calculateParentPath(webDavConfig, currentBrowsingPath ?: "") != null
+                        if (canGoUp) {
                             item {
                                 ListItem(
                                     headlineContent = { Text(".. (返回上级)") },
@@ -240,11 +360,10 @@ fun FilePickerDialog(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
-                                            if (pathHistory.size > 1) {
-                                                val newHistory = pathHistory.dropLast(1)
-                                                pathHistory = newHistory
-                                                val parentPath = newHistory.last()
+                                            val parentPath = calculateParentPath(webDavConfig, currentBrowsingPath ?: return@clickable)
+                                            if (parentPath != null) {
                                                 currentBrowsingPath = parentPath
+                                                pathHistory = generatePathHistory(webDavConfig, parentPath)
 
                                                 isLoading = true
                                                 coroutineScope.launch {
@@ -264,12 +383,12 @@ fun FilePickerDialog(
                             }
                         }
 
-                        Log.d("FilePickerDialog", "Current browsing path: $currentBrowsingPath")
-                        Log.d("FilePickerDialog", "Directories count: ${directories.size}")
-                        if(directories.isNotEmpty()){
-                            Log.d("FilePickerDialog", "First directory path: ${directories[0].path}")
-                            Log.d("FilePickerDialog", "First directory name: ${directories[0].name}")
-                        }
+                        // Log.d("FilePickerDialog", "Current browsing path: $currentBrowsingPath")
+                        // Log.d("FilePickerDialog", "Directories count: ${directories.size}")
+                        // if(directories.isNotEmpty()){
+                        //     Log.d("FilePickerDialog", "First directory path: ${directories[0].path}")
+                        //     Log.d("FilePickerDialog", "First directory name: ${directories[0].name}")
+                        // }
 
                         // 额外过滤：在UI层也确保不显示当前目录
                         val filteredDirectories = directories.filter { dir ->
@@ -289,7 +408,7 @@ fun FilePickerDialog(
                             }
 
                             val isCurrentDirectory = dirPath == currentPathOnly
-                            Log.d("FilePickerDialog", "Comparing: '$dirPath' with '$currentPathOnly' (from $currentPath)")
+                            // Log.d("FilePickerDialog", "Comparing: '$dirPath' with '$currentPathOnly' (from $currentPath)")
 
                             !isCurrentDirectory && dir.name != "."
                         }
@@ -317,9 +436,22 @@ fun FilePickerDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        val newPath = (currentBrowsingPath?.trimEnd('/') + "/" + dir.name.trim('/')).trimEnd('/')
+                                        val currentPath = currentBrowsingPath ?: return@clickable
+                                        // 构建完整的子目录路径
+                                        val newPath = if (dir.path.startsWith("http")) {
+                                            dir.path.trimEnd('/')
+                                        } else {
+                                            // 如果是相对路径，需要构建完整URL
+                                            val baseUrl = parseWebDavBaseUrl(webDavConfig)
+                                            val currentPathOnly = if (currentPath.startsWith("http")) {
+                                                try { URL(currentPath).path.trimEnd('/') } catch (e: Exception) { currentPath }
+                                            } else {
+                                                currentPath.trimEnd('/')
+                                            }
+                                            "$baseUrl${currentPathOnly}/${dir.name.trim('/')}".trimEnd('/')
+                                        }
                                         currentBrowsingPath = newPath
-                                        pathHistory = pathHistory + newPath
+                                        pathHistory = generatePathHistory(webDavConfig, newPath)
 
                                         isLoading = true
                                         coroutineScope.launch {
@@ -331,9 +463,10 @@ fun FilePickerDialog(
                                                 .onFailure { e ->
                                                     println("Failed to load directories: ${e.message}")
                                                     // If loading fails, fallback to previous level
-                                                    if (pathHistory.size > 1) {
-                                                        pathHistory = pathHistory.dropLast(1)
-                                                        currentBrowsingPath = pathHistory.last()
+                                                    val parentPath = calculateParentPath(webDavConfig, newPath)
+                                                    if (parentPath != null) {
+                                                        currentBrowsingPath = parentPath
+                                                        pathHistory = generatePathHistory(webDavConfig, parentPath)
                                                     }
                                                 }
                                             isLoading = false
