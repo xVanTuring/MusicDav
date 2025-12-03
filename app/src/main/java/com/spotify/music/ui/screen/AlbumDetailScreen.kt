@@ -1,17 +1,17 @@
 package com.spotify.music.ui.screen
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import com.spotify.music.data.Album
-import com.spotify.music.data.MusicFile
-import com.spotify.music.data.PlaylistState
 import com.spotify.music.data.ServerConfigRepository
 import com.spotify.music.player.PlaylistStateController
 import com.spotify.music.ui.BottomPlayerBar
@@ -26,6 +26,9 @@ fun AlbumDetailScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
+    // 存储当前专辑的歌曲列表
+    var currentAlbumSongs by remember { mutableStateOf<List<com.spotify.music.data.MusicFile>>(emptyList()) }
 
     // 拦截返回键，返回到专辑列表页面
     BackHandler {
@@ -45,22 +48,20 @@ fun AlbumDetailScreen(
         playlistController.setCredentials(webDavConfig)
     }
 
-    // 确保播放列表已加载到播放器
-    LaunchedEffect(playlistController) {
-        playlistController.ensurePlaylistLoaded()
-    }
-
     MusicListScreen(
         webDavConfig = webDavConfig,
         directoryPath = album.directoryUrl,
         showBack = true,
         onBack = onBack,
-        currentPlayingIndex = playlistController.state.currentIndex,
+        currentPlayingSong = playlistController.state.currentSong,
         onPlaylistLoaded = { songs ->
-            playlistController.loadPlaylist(songs)
+            // 存储当前专辑的歌曲列表，但不自动加载到播放器
+            currentAlbumSongs = songs
         },
         onSongSelected = { index, _ ->
             coroutineScope.launch {
+                // 加载当前专辑的歌曲列表到播放器，然后播放选中的歌曲
+                playlistController.loadPlaylist(currentAlbumSongs)
                 playlistController.setPlaylistAndPlay(index)
             }
         },
