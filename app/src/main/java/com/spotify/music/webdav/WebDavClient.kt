@@ -127,7 +127,7 @@ class WebDavClient {
         }
     }
     
-    suspend fun findCoverImage(config: WebDavConfig, directoryUrl: String): Result<ByteArray?> = withContext(Dispatchers.IO) {
+    suspend fun findCoverImageUrl(config: WebDavConfig, directoryUrl: String): Result<String?> = withContext(Dispatchers.IO) {
         try {
             val sardine: Sardine = OkHttpSardine()
             sardine.setCredentials(config.username, config.password)
@@ -141,24 +141,7 @@ class WebDavClient {
                 }
             if (imageResource != null) {
                 val fullUrl = buildFullUrl(normalizedUrl, imageResource.path)
-                val client = OkHttpClient.Builder()
-                    .connectTimeout(30, TimeUnit.SECONDS)
-                    .readTimeout(30, TimeUnit.SECONDS)
-                    .build()
-                val request = Request.Builder()
-                    .url(fullUrl)
-                    .headers(getAuthHeaders(config.username, config.password).let { okhttp3.Headers.Builder().apply {
-                        it.forEach { (k, v) -> add(k, v) }
-                    }.build() })
-                    .build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        return@withContext Result.success(null)
-                    }
-                    val body = response.body ?: return@withContext Result.success(null)
-                    val bytes = body.bytes()
-                    Result.success(bytes)
-                }
+                Result.success(fullUrl)
             } else {
                 Result.success(null)
             }

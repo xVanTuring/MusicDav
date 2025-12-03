@@ -1,16 +1,26 @@
 package com.spotify.music.ui.screen
 
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,10 +38,26 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import coil3.network.NetworkHeaders
+import coil3.network.httpHeaders
+import coil3.request.ImageRequest
+import coil3.request.crossfade
+import coil3.request.error
+import coil3.request.placeholder
+
 import com.spotify.music.data.Album
+import com.spotify.music.data.getWebDavConfig
+import okhttp3.Credentials
+import okhttp3.Request
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -55,13 +81,13 @@ fun AlbumListScreen(
     if (onAddButtonClick == null && creating) {
         AlbumCreateForm(
             onCancel = { creating = false },
-            onSave = { name, url, username, password, directoryUrl, coverImageBase64, serverConfigId ->
+            onSave = { name, url, username, password, directoryUrl, coverImageUrl, serverConfigId ->
                 val config = com.spotify.music.data.WebDavConfig(url = url, username = username, password = password)
                 val album = Album(
                     name = name,
                     config = config,
                     directoryUrl = directoryUrl,
-                    coverImageBase64 = coverImageBase64,
+                    coverImageUrl = coverImageUrl,
                     serverConfigId = serverConfigId
                 )
                 onCreate(album, serverConfigId)
@@ -92,54 +118,21 @@ fun AlbumListScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
-                Column(
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 160.dp),
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(16.dp),
-                    verticalArrangement = Arrangement.Top
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    albums.forEach { album ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                                .combinedClickable(
-                                    onClick = { onSelect(album) },
-                                    onLongClick = { selectedAlbumForDelete = album }
-                                ),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = album.name,
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
-                                    Text(
-                                        text = album.directoryUrl ?: run {
-                                            if (album.serverConfigId != null) {
-                                                com.spotify.music.data.ServerConfigRepository.load(context)
-                                                    .find { it.id == album.serverConfigId }
-                                                    ?.toWebDavConfig()?.url ?: album.config.url
-                                            } else {
-                                                album.config.url
-                                            }
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
+                    items(albums) { album ->
+                        AlbumGridItem(
+                            album = album,
+                            context = context,
+                            onClick = { onSelect(album) },
+                            onLongClick = { selectedAlbumForDelete = album }
+                        )
                     }
                 }
 
@@ -169,6 +162,87 @@ fun AlbumListScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun AlbumGridItem(
+    album: Album,
+    context: android.content.Context,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // 专辑封面
+           val webDavConfig = album.getWebDavConfig(context)
+            val headers = NetworkHeaders.Builder()
+                .set("Authorization", Credentials.basic(webDavConfig.username, webDavConfig.password))
+                .build()
+            if(album.coverImageUrl != null){
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(album.coverImageUrl)
+                        .httpHeaders(headers)
+                        .crossfade(true)
+                        .placeholder(android.R.drawable.ic_menu_gallery)
+                        .error(android.R.drawable.ic_menu_gallery)
+                        .build(),
+                    contentDescription = album.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+            }else{
+                AsyncImage(model=android.R.drawable.ic_menu_gallery,
+                    contentDescription = album.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+            }
+           // 使用Request.Builder添加Basic Authentication
+
+
+
+
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 专辑名称
+            Text(
+                text = album.name,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

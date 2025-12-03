@@ -49,7 +49,7 @@ data class PlaylistState(
     val name: String,
     val config: WebDavConfig,
     val directoryUrl: String? = null,
-    val coverImageBase64: String? = null,
+    val coverImageUrl: String? = null,
     val serverConfigId: String? = null  // Reference to ServerConfig, if null use config directly
 )
 
@@ -164,14 +164,14 @@ object ServerConfigRepository {
             val username = cfg.optString("username", "")
             val password = cfg.optString("password", "")
             val directoryUrl = if (obj.has("directoryUrl")) obj.optString("directoryUrl", null) else null
-            val coverBase64 = if (obj.has("coverImageBase64")) obj.optString("coverImageBase64", null) else null
+            val coverImageUrl = if (obj.has("coverImageUrl")) obj.optString("coverImageUrl", null) else null
             val serverConfigId = if (obj.has("serverConfigId")) obj.optString("serverConfigId", null) else null
             result.add(
                 Album(
                     name = name,
                     config = WebDavConfig(url, username, password),
                     directoryUrl = directoryUrl,
-                    coverImageBase64 = coverBase64,
+                    coverImageUrl = coverImageUrl,
                     serverConfigId = serverConfigId
                 )
             )
@@ -190,7 +190,7 @@ object ServerConfigRepository {
             cfg.put("password", album.config.password)
             obj.put("config", cfg)
             obj.put("directoryUrl", album.directoryUrl)
-            obj.put("coverImageBase64", album.coverImageBase64)
+            obj.put("coverImageUrl", album.coverImageUrl)
             if (album.serverConfigId != null) {
                 obj.put("serverConfigId", album.serverConfigId)
             }

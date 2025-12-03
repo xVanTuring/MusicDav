@@ -1,6 +1,7 @@
 package com.spotify.music
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -33,15 +34,60 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import com.spotify.music.data.getWebDavConfig
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // 打印已保存的配置信息
+        printConfigurations()
+
         setContent {
             MusicDavTheme {
                 MusicPlayerApp(modifier = Modifier.fillMaxSize())
             }
+        }
+    }
+
+    private fun printConfigurations() {
+        try {
+            // 打印服务器配置
+            val serverConfigs = com.spotify.music.data.ServerConfigRepository.load(this)
+            Log.d("MusicDav", "=== 已保存的服务器配置 ===")
+            if (serverConfigs.isEmpty()) {
+                Log.d("MusicDav", "暂无服务器配置")
+            } else {
+                serverConfigs.forEach { config ->
+                    Log.d("MusicDav", "服务器配置: ${config.name} (ID: ${config.id})")
+                    Log.d("MusicDav", "  URL: ${config.url}")
+                    Log.d("MusicDav", "  用户名: ${config.username}")
+                }
+            }
+
+            // 打印专辑配置
+            val albums = com.spotify.music.data.AlbumsRepository.load(this)
+            Log.d("MusicDav", "=== 已保存的专辑配置 ===")
+            if (albums.isEmpty()) {
+                Log.d("MusicDav", "暂无专辑配置")
+            } else {
+                albums.forEach { album ->
+                    val webDavConfig = album.getWebDavConfig(this)
+                    Log.d("MusicDav", "专辑: ${album.name}")
+                    if (album.serverConfigId != null) {
+                        val serverConfig = com.spotify.music.data.ServerConfigRepository.getById(this, album.serverConfigId!!)
+                        Log.d("MusicDav", "  引用服务器配置: ${serverConfig?.name} (ID: ${album.serverConfigId})")
+                    }
+                    Log.d("MusicDav", "  WebDAV URL: ${webDavConfig.url}")
+                    Log.d("MusicDav", "  用户名: ${webDavConfig.username}")
+                    Log.d("MusicDav", "  目录URL: ${album.directoryUrl ?: "根目录"}")
+                    Log.d("MusicDav", "  封面图片: ${album.coverImageUrl ?: "无"}")
+                }
+            }
+            Log.d("MusicDav", "====================")
+        } catch (e: Exception) {
+            Log.e("MusicDav", "打印配置信息时出错: ${e.message}", e)
         }
     }
 }
@@ -143,13 +189,13 @@ fun MainTabScreen(
     if (creatingAlbum) {
         AlbumCreateForm(
             onCancel = { creatingAlbum = false },
-            onSave = { name, url, username, password, directoryUrl, coverImageBase64, serverConfigId ->
+            onSave = { name, url, username, password, directoryUrl, coverImageUrl, serverConfigId ->
                 val config = com.spotify.music.data.WebDavConfig(url = url, username = username, password = password)
                 val album = com.spotify.music.data.Album(
                     name = name,
                     config = config,
                     directoryUrl = directoryUrl,
-                    coverImageBase64 = coverImageBase64,
+                    coverImageUrl = coverImageUrl,
                     serverConfigId = serverConfigId
                 )
                 onCreateAlbum(album, serverConfigId)

@@ -51,7 +51,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AlbumCreateForm(
     onCancel: () -> Unit,
-    onSave: (name: String, url: String, username: String, password: String, directoryUrl: String?, coverImageBase64: String?, serverConfigId: String?) -> Unit
+    onSave: (name: String, url: String, username: String, password: String, directoryUrl: String?, coverImageUrl: String?, serverConfigId: String?) -> Unit
 ) {
     val context = LocalContext.current
     var name by remember { mutableStateOf("") }
@@ -368,18 +368,15 @@ fun AlbumCreateForm(
             val targetUrl = directoryUrl ?: currentUrl
             webDavClient.testConnection(config)
                 .onSuccess {
-                    val coverResult = webDavClient.findCoverImage(config, targetUrl)
-                    val coverBytes = coverResult.getOrNull()
-                    val coverBase64 = coverBytes?.let { bytes ->
-                        android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
-                    }
+                    val coverResult = webDavClient.findCoverImageUrl(config, targetUrl)
+                    val coverUrl = coverResult.getOrNull()
                     isLoading = false
                     val finalServerConfigId = if (useExistingConfig) selectedServerConfigId else null
                     if (name.isBlank()) {
                         val folderName = targetUrl.trimEnd('/').substringAfterLast('/')
-                        onSave(folderName, currentUrl, currentUsername, currentPassword, targetUrl, coverBase64, finalServerConfigId)
+                        onSave(folderName, currentUrl, currentUsername, currentPassword, targetUrl, coverUrl, finalServerConfigId)
                     } else {
-                        onSave(name, currentUrl, currentUsername, currentPassword, targetUrl, coverBase64, finalServerConfigId)
+                        onSave(name, currentUrl, currentUsername, currentPassword, targetUrl, coverUrl, finalServerConfigId)
                     }
                 }
                 .onFailure { e ->
