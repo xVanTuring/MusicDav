@@ -200,6 +200,10 @@ fun MainTabScreen(
                 )
                 onCreateAlbum(album, serverConfigId)
                 creatingAlbum = false
+            },
+            onCreateServerConfig = {
+                creatingAlbum = false
+                creatingServerConfig = true
             }
         )
         return
@@ -209,8 +213,9 @@ fun MainTabScreen(
         ServerConfigCreateScreen(
             onCancel = { creatingServerConfig = false },
             onSave = { config ->
-                // 服务器配置已保存，关闭屏幕并刷新列表
+                // 服务器配置已保存，返回到专辑创建界面
                 creatingServerConfig = false
+                creatingAlbum = true
                 serverConfigsRefreshKey++
             }
         )

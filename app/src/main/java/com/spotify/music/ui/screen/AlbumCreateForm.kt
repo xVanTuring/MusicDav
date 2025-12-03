@@ -21,6 +21,9 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -46,12 +49,14 @@ import androidx.compose.ui.unit.dp
 import com.spotify.music.data.ServerConfigRepository
 import com.spotify.music.webdav.WebDavClient
 import kotlinx.coroutines.launch
+import kotlin.math.exp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumCreateForm(
     onCancel: () -> Unit,
-    onSave: (name: String, url: String, username: String, password: String, directoryUrl: String?, coverImageUrl: String?, serverConfigId: String?) -> Unit
+    onSave: (name: String, url: String, username: String, password: String, directoryUrl: String?, coverImageUrl: String?, serverConfigId: String?) -> Unit,
+    onCreateServerConfig: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var name by remember { mutableStateOf("") }
@@ -75,25 +80,17 @@ fun AlbumCreateForm(
     // Server config selection
     var serverConfigs by remember { mutableStateOf(ServerConfigRepository.load(context)) }
     var selectedServerConfigId by remember { mutableStateOf<String?>(null) }
-    var showServerConfigDialog by remember { mutableStateOf(false) }
     var useExistingConfig by remember { mutableStateOf(false) }
     
     // 拦截返回键
     BackHandler {
         when {
-            showServerConfigDialog -> showServerConfigDialog = false
             directoryPickerVisible -> directoryPickerVisible = false
             else -> onCancel()
         }
     }
     
-    // Update server configs when dialog is shown
-    LaunchedEffect(showServerConfigDialog) {
-        if (showServerConfigDialog) {
-            serverConfigs = ServerConfigRepository.load(context)
-        }
-    }
-    
+        
     // When a server config is selected, populate the fields
     LaunchedEffect(selectedServerConfigId) {
         selectedServerConfigId?.let { id ->
@@ -153,48 +150,44 @@ fun AlbumCreateForm(
         if (useExistingConfig) {
             // Server config dropdown
             var expanded by remember { mutableStateOf(false) }
-            OutlinedTextField(
-                value = selectedServerConfigId?.let { id ->
-                    serverConfigs.find { it.id == id }?.name ?: ""
-                } ?: "",
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("选择服务器配置") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = true },
-                trailingIcon = {
-                    IconButton(onClick = { expanded = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "选择配置"
+            ExposedDropdownMenuBox(expanded = expanded,
+                onExpandedChange = {expanded=!expanded}){
+                OutlinedTextField(
+                    value = selectedServerConfigId?.let { id ->
+                        serverConfigs.find { it.id == id }?.name ?: ""
+                    } ?: "",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("选择服务器配置") },
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth(),
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    serverConfigs.forEach { config ->
+                        DropdownMenuItem(
+                            text = { Text(config.name) },
+                            onClick = {
+                                selectedServerConfigId = config.id
+                                expanded = false
+                            }
                         )
                     }
-                }
-            )
-            
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                serverConfigs.forEach { config ->
+                    HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text(config.name) },
+                        text = { Text("新建服务器配置...") },
                         onClick = {
-                            selectedServerConfigId = config.id
                             expanded = false
+                            onCreateServerConfig()
                         }
                     )
                 }
-                Divider()
-                DropdownMenuItem(
-                    text = { Text("管理服务器配置...") },
-                    onClick = {
-                        expanded = false
-                        showServerConfigDialog = true
-                    }
-                )
             }
+
         } else {
             // Manual input fields
             OutlinedTextField(
@@ -580,17 +573,4 @@ fun AlbumCreateForm(
         )
     }
     
-    // Server config management dialog
-    if (showServerConfigDialog) {
-        ServerConfigManagementDialog(
-            onDismiss = { 
-                showServerConfigDialog = false
-                serverConfigs = ServerConfigRepository.load(context)
-            },
-            onConfigSelected = { configId ->
-                selectedServerConfigId = configId
-                showServerConfigDialog = false
-            }
-        )
     }
-}
