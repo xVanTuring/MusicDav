@@ -27,7 +27,19 @@ fun CoverImagePickerDialog(
         initialPath = initialPath,
         config = config,
         onDismiss = onDismiss,
-        onPathSelected = onCoverSelected,
+        onPathSelected = { selectedPath ->
+            // Convert file path to full HTTP URL like directory selection does
+            selectedPath?.let { path ->
+                if (path.startsWith("http")) {
+                    onCoverSelected(path)
+                } else {
+                    // Build full HTTP URL from file path
+                    val webDavClient = com.spotify.music.webdav.WebDavClient()
+                    val fullUrl = webDavClient.buildFullUrl(webDavConfig.url, path)
+                    onCoverSelected(fullUrl)
+                }
+            } ?: onCoverSelected(null)
+        },
         initiallySelectedPath = initiallySelectedCover
     )
 }

@@ -50,13 +50,16 @@ fun MusicListScreen(
     onSongSelected: (Int, MusicFile) -> Unit,
     onPlaylistLoaded: (List<MusicFile>) -> Unit = {},
     bottomBar: @Composable () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showTopBar: Boolean = true,
+    externalRefreshTrigger: (() -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var musicFiles by remember { mutableStateOf<List<MusicFile>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var refreshKey by remember { mutableStateOf(0) }
     
     val scope = rememberCoroutineScope()
     val webDavClient = remember { WebDavClient() }
@@ -70,6 +73,33 @@ fun MusicListScreen(
         }
     }
     
+    // 响应外部刷新触发器
+    LaunchedEffect(externalRefreshTrigger) {
+        externalRefreshTrigger?.invoke()
+        refreshKey++
+    }
+
+    // 响应刷新键变化
+    LaunchedEffect(refreshKey) {
+        if (refreshKey > 0) {
+            isRefreshing = true
+            errorMessage = null
+            scope.launch {
+                webDavClient.fetchMusicFiles(effectiveConfig)
+                    .onSuccess { files ->
+                        musicFiles = files
+                        com.spotify.music.data.PlaylistCache.save(context, directoryPath, files)
+                        onPlaylistLoaded(files)
+                        isRefreshing = false
+                    }
+                    .onFailure { e ->
+                        errorMessage = "Failed to load music: ${e.message}"
+                        isRefreshing = false
+                    }
+            }
+        }
+    }
+
     // 首次加载：先显示缓存，然后后台更新
     LaunchedEffect(effectiveConfig.url) {
         // 先加载缓存并立即显示
@@ -144,94 +174,131 @@ fun MusicListScreen(
         }
     }
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Music Library") },
-                navigationIcon = if (showBack) {
-                    {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+      if (showTopBar) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Music Library") },
+                    navigationIcon = if (showBack) {
+                        {
+                            IconButton(onClick = onBack) {
+                                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                            }
+                        }
+                    } else {
+                        {}
+                    },
+                    actions = {
+                        if (isRefreshing) {
+                            Box(
+                                modifier = Modifier.padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                        }
+                        IconButton(onClick = {
+                            refreshKey++
+                        }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
                     }
-                } else {
-                    {}
-                },
-                actions = {
-                    if (isRefreshing) {
-                        Box(
-                            modifier = Modifier.padding(16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp
-                            )
-                        }
-                    }
-                    IconButton(onClick = { loadMusicFiles(showLoading = false) }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                    }
-                }
+                )
+            },
+            bottomBar = bottomBar,
+            modifier = modifier
+        ) { paddingValues ->
+            Content(
+                paddingValues = paddingValues,
+                isLoading = isLoading,
+                errorMessage = errorMessage,
+                musicFiles = musicFiles,
+                currentPlayingSong = currentPlayingSong,
+                onSongSelected = onSongSelected
             )
-        },
-        bottomBar = bottomBar,
-        modifier = modifier
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            when {
-                isLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
+        }
+    } else {
+        Scaffold(
+            bottomBar = bottomBar,
+            modifier = modifier
+        ) { paddingValues ->
+            Content(
+                paddingValues = paddingValues,
+                isLoading = isLoading,
+                errorMessage = errorMessage,
+                musicFiles = musicFiles,
+                currentPlayingSong = currentPlayingSong,
+                onSongSelected = onSongSelected
+            )
+        }
+    }
+}
+
+@Composable
+private fun Content(
+    paddingValues: androidx.compose.foundation.layout.PaddingValues,
+    isLoading: Boolean,
+    errorMessage: String?,
+    musicFiles: List<MusicFile>,
+    currentPlayingSong: MusicFile?,
+    onSongSelected: (Int, MusicFile) -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+    ) {
+        when {
+            isLoading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
                 }
-                errorMessage != null -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = errorMessage ?: "",
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-                    }
-                }
-                musicFiles.isEmpty() -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+            }
+            errorMessage != null -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "No music files found",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = errorMessage ?: "",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        itemsIndexed(musicFiles) { index, musicFile ->
-                            MusicListItem(
-                                musicFile = musicFile,
-                                isPlaying = currentPlayingSong != null && musicFile.url == currentPlayingSong.url,
-                                onClick = { onSongSelected(index, musicFile) }
-                            )
-                        }
+            }
+            musicFiles.isEmpty() -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No music files found",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    itemsIndexed(musicFiles) { index, musicFile ->
+                        MusicListItem(
+                            musicFile = musicFile,
+                            isPlaying = currentPlayingSong != null && musicFile.url == currentPlayingSong.url,
+                            onClick = { onSongSelected(index, musicFile) }
+                        )
                     }
                 }
             }

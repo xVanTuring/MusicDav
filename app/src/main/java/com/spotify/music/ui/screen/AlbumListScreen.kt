@@ -195,8 +195,13 @@ fun AlbumGridItem(
                     .data(album.coverImageUrl)
                     .httpHeaders(headers)
                     .crossfade(true)
-                    .placeholder(android.R.drawable.ic_menu_gallery)
-                    .error(android.R.drawable.ic_menu_gallery)
+                    .placeholder(android.R.drawable.star_on)
+                    .error(android.R.drawable.star_on)
+                    .listener(
+                        onError = {request, throwable->
+                            Log.e("IMAGE_LOAD", "Load error: $throwable")
+                        }
+                    )
                     .build(),
                 contentDescription = album.name,
                 contentScale = ContentScale.Crop,

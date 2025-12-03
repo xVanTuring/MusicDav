@@ -97,6 +97,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var albums by remember { mutableStateOf(com.spotify.music.data.AlbumsRepository.load(context)) }
     var selectedAlbum by remember { mutableStateOf<com.spotify.music.data.Album?>(null) }
+    var editingAlbum by remember { mutableStateOf<com.spotify.music.data.Album?>(null) }
     val playlistController = rememberPlaylistStateController()
 
     // 处理通知权限
@@ -104,7 +105,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
 
     // 在主页面的返回键处理：双击退出
     var lastBackPressTime by remember { mutableStateOf(0L) }
-    androidx.activity.compose.BackHandler(enabled = selectedAlbum == null) {
+    androidx.activity.compose.BackHandler(enabled = selectedAlbum == null && editingAlbum == null) {
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastBackPressTime < 2000) {
             // 两次点击间隔小于2秒，退出应用
@@ -116,7 +117,32 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
         }
     }
 
-    if (selectedAlbum == null) {
+    if (editingAlbum != null) {
+        // Show edit form
+        AlbumCreateForm(
+            onCancel = { editingAlbum = null },
+            onSave = { name, url, username, password, directoryUrl, coverImageUrl, serverConfigId ->
+                val config = com.spotify.music.data.WebDavConfig(url = url, username = username, password = password)
+                val updatedAlbum = editingAlbum!!.copy(
+                    name = name,
+                    config = config,
+                    directoryUrl = directoryUrl,
+                    coverImageUrl = coverImageUrl,
+                    serverConfigId = serverConfigId
+                )
+                // Update the album in the list
+                val updatedAlbums = albums.map { if (it == editingAlbum) updatedAlbum else it }
+                albums = updatedAlbums
+                com.spotify.music.data.AlbumsRepository.save(context, updatedAlbums)
+                // Update selected album if it's the same one
+                if (selectedAlbum == editingAlbum) {
+                    selectedAlbum = updatedAlbum
+                }
+                editingAlbum = null
+            },
+            editingAlbum = editingAlbum
+        )
+    } else if (selectedAlbum == null) {
         MainTabScreen(
             albums = albums,
             onSelectAlbum = { selectedAlbum = it },
@@ -154,6 +180,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
         AlbumDetailScreen(
             album = selectedAlbum!!,
             onBack = { selectedAlbum = null },
+            onEdit = { album -> editingAlbum = album },
             playlistController = playlistController,
             modifier = modifier
         )

@@ -52,7 +52,7 @@ class WebDavClient {
         }
     }
     
-    private fun buildFullUrl(baseUrl: String, resourcePath: String): String {
+    fun buildFullUrl(baseUrl: String, resourcePath: String): String {
         return try {
             val url = java.net.URL(baseUrl)
             val protocol = url.protocol

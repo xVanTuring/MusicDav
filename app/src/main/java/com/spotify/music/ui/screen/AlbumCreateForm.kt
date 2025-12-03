@@ -61,6 +61,7 @@ import coil3.compose.AsyncImage
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import com.spotify.music.data.ServerConfigRepository
+import com.spotify.music.data.Album
 import com.spotify.music.webdav.WebDavClient
 import kotlinx.coroutines.launch
 import okhttp3.Credentials
@@ -70,7 +71,8 @@ import okhttp3.Credentials
 fun AlbumCreateForm(
     onCancel: () -> Unit,
     onSave: (name: String, url: String, username: String, password: String, directoryUrl: String?, coverImageUrl: String?, serverConfigId: String?) -> Unit,
-    onCreateServerConfig: () -> Unit = {}
+    onCreateServerConfig: () -> Unit = {},
+    editingAlbum: Album? = null
 ) {
     val context = LocalContext.current
     var name by remember { mutableStateOf("") }
@@ -98,6 +100,33 @@ fun AlbumCreateForm(
     var serverConfigs by remember { mutableStateOf(ServerConfigRepository.load(context)) }
     var selectedServerConfigId by remember { mutableStateOf<String?>(null) }
     var useExistingConfig by remember { mutableStateOf(false) }
+
+    // Initialize form with editing album data
+    LaunchedEffect(editingAlbum) {
+        editingAlbum?.let { album ->
+            name = album.name
+            directoryUrl = album.directoryUrl
+            manuallySelectedCoverImageUrl = album.coverImageUrl
+
+            if (album.serverConfigId != null) {
+                // Use existing server config
+                useExistingConfig = true
+                selectedServerConfigId = album.serverConfigId
+                val config = serverConfigs.find { it.id == album.serverConfigId }
+                config?.let {
+                    url = it.url
+                    username = it.username
+                    password = it.password
+                }
+            } else {
+                // Use manual config
+                useExistingConfig = false
+                url = album.config.url
+                username = album.config.username
+                password = album.config.password
+            }
+        }
+    }
 
     // Helper function to get current WebDAV configuration
     fun getCurrentWebDavConfig(): com.spotify.music.data.WebDavConfig {
@@ -147,7 +176,7 @@ fun AlbumCreateForm(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Create Album") },
+                title = { Text(if (editingAlbum != null) "Edit Album" else "Create Album") },
                 navigationIcon = {
                     IconButton(onClick = onCancel) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -509,8 +538,8 @@ fun AlbumCreateForm(
                                     val coverResult =
                                         webDavClient.findCoverImageUrl(config, targetUrl)
                                     val coverUrl = coverResult.getOrNull()
-                                    val finalCoverUrl =
-                                        manuallySelectedCoverImageUrl ?: coverUrl
+                                    // CoverImagePickerDialog now returns full HTTP URLs, so we can use them directly
+                                val finalCoverUrl = manuallySelectedCoverImageUrl ?: coverUrl
                                     isLoading = false
                                     val finalServerConfigId =
                                         if (useExistingConfig) selectedServerConfigId else null
@@ -555,7 +584,7 @@ fun AlbumCreateForm(
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                     }
-                    Text(if (isLoading) "Saving..." else "保存专辑")
+                    Text(if (isLoading) "Saving..." else (if (editingAlbum != null) "更新专辑" else "保存专辑"))
                 }
             }
         }
