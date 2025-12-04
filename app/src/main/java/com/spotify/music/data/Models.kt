@@ -37,6 +37,8 @@ data class PlaylistState(
     val currentAlbumCoverUrl: String? = null,
     // 当前播放歌曲的内置封面URL（来自音乐文件本身）
     val currentEmbeddedCoverUrl: String? = null,
+    // 是否正在加载歌曲元数据（用于控制封面显示时机）
+    val isLoadingMetadata: Boolean = false,
     // 歌曲URL到专辑封面URL的映射
     val songToAlbumCoverMap: Map<String, String?> = emptyMap(),
     // 当前播放专辑的WebDAV配置（用于加载封面图片）
@@ -46,9 +48,22 @@ data class PlaylistState(
         get() = songs.getOrNull(currentIndex)
 
     // 获取当前歌曲的封面URL，优先级：内置封面 > 专辑封面
+    // 如果正在加载元数据，返回null以显示占位符
     val currentCoverUrl: String?
-        get() = currentEmbeddedCoverUrl ?: currentSong?.let { song ->
-            songToAlbumCoverMap[song.url]
+        get() {
+            if (isLoadingMetadata) {
+                return null // 加载期间显示占位符
+            }
+
+            // 加载完成后，优先显示内嵌封面，否则显示专辑封面
+            val embedded = currentEmbeddedCoverUrl
+            val album = currentSong?.let { song -> songToAlbumCoverMap[song.url] }
+            val result = embedded ?: album
+
+            // 调试：记录最终决定的封面
+            android.util.Log.d("PlaylistState", "最终封面选择: embedded=${embedded != null}, album=${album != null}, result=${result?.take(50)}")
+
+            return result
         }
 
     val hasNext: Boolean

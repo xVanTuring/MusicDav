@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import java.util.concurrent.atomic.AtomicReference
 import androidx.compose.ui.platform.LocalContext
 
@@ -37,6 +38,7 @@ class PlaylistStateController {
     private val listenerRef = AtomicReference<Player.Listener>()
     private var isControllerReady = false
     private var lastCredentials: Pair<String, String>? = null
+    private var metadataLoadTimeoutJob: Job? = null
 
     init {
         _state.value = PlaylistState()
@@ -116,20 +118,31 @@ class PlaylistStateController {
                             // 优先使用 artworkUri，如果为null则尝试使用 artworkData
                             if (artworkUri != null) {
                                 // 更新当前歌曲的内置封面
+                                Log.d("PlaylistStateController", "内嵌封面加载完成: artworkUri=${artworkUri}")
+                                // 取消超时任务
+                                metadataLoadTimeoutJob?.cancel()
                                 _state.value = _state.value.copy(
-                                    currentEmbeddedCoverUrl = artworkUri.toString()
+                                    currentEmbeddedCoverUrl = artworkUri.toString(),
+                                    isLoadingMetadata = false // 元数据加载完成
                                 )
                             } else if (artworkData != null && artworkData.isNotEmpty()) {
                                 // 将 artworkData 转换为 Base64 URL
                                 val base64Cover = android.util.Base64.encodeToString(artworkData, android.util.Base64.NO_WRAP)
                                 val mimeType = when (mediaMetadata.artworkDataType) {
                                     MediaMetadata.PICTURE_TYPE_FRONT_COVER -> "image/jpeg"
-                                    MediaMetadata.PICTURE_TYPE_ARTIST_PERFORMER -> "image/png"
                                     else -> "image/jpeg"
                                 }
+                                Log.d("PlaylistStateController", "内嵌封面加载完成: artworkData size=${artworkData.size}, type=$mimeType")
+                                // 取消超时任务
+                                metadataLoadTimeoutJob?.cancel()
                                 _state.value = _state.value.copy(
-                                    currentEmbeddedCoverUrl = "data:$mimeType;base64,$base64Cover"
+                                    currentEmbeddedCoverUrl = "data:$mimeType;base64,$base64Cover",
+                                    isLoadingMetadata = false // 元数据加载完成
                                 )
+                            } else {
+                                // 元数据变化但没有封面数据，此时不设置 isLoadingMetadata = false
+                                // 等待后续可能有的封面数据，或者超时后再显示专辑封面
+                                Log.d("PlaylistStateController", "元数据变化但无封面数据，继续等待")
                             }
                         }
                     }
@@ -142,10 +155,12 @@ class PlaylistStateController {
                             // 只在MediaController的索引与当前状态不同时更新
                             // 这样可以避免覆盖用户点击时的即时状态更新
                             if (_state.value.currentIndex != currentIndex) {
+                                Log.d("PlaylistStateController", "自动切换歌曲: 设置加载状态 isLoadingMetadata=true, 重置封面")
                                 _state.value = _state.value.copy(
                                     duration = duration,
                                     currentIndex = currentIndex,
-                                    currentEmbeddedCoverUrl = null // 重置内置封面
+                                    currentEmbeddedCoverUrl = null, // 重置内置封面
+                                    isLoadingMetadata = true // 开始加载元数据
                                 )
                             } else {
                                 // 只更新duration，保持currentIndex不变
@@ -226,11 +241,26 @@ class PlaylistStateController {
         if (state.songs.isEmpty()) return
 
         // 立即更新UI状态以提供即时反馈，同时重置内置封面
+        Log.d("PlaylistStateController", "用户点击歌曲: 设置加载状态 isLoadingMetadata=true, 重置封面")
+
+        // 取消之前的超时任务
+        metadataLoadTimeoutJob?.cancel()
+
         _state.value = _state.value.copy(
             currentIndex = index,
             isPlaying = true,
-            currentEmbeddedCoverUrl = null // 重置内置封面，等待MediaMetadata更新
+            currentEmbeddedCoverUrl = null, // 重置内置封面，等待MediaMetadata更新
+            isLoadingMetadata = true // 开始加载元数据
         )
+
+        // 设置超时任务：如果3秒内没有内嵌封面，则显示专辑封面
+        metadataLoadTimeoutJob = CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            kotlinx.coroutines.delay(3000) // 3秒超时
+            if (_state.value.isLoadingMetadata) {
+                Log.d("PlaylistStateController", "元数据加载超时，显示专辑封面")
+                _state.value = _state.value.copy(isLoadingMetadata = false)
+            }
+        }
 
         // 等待控制器完全就绪（不仅仅是连接）
         if (!isControllerReady || controller == null) {
