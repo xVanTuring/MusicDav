@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -41,6 +42,7 @@ import com.spotify.music.data.ServerConfigRepository
 @Composable
 fun ServerConfigListScreen(
     onCreate: () -> Unit,
+    onEdit: (ServerConfig) -> Unit = {},
     refreshKey: Int = 0,
     modifier: Modifier = Modifier
 ) {
@@ -103,7 +105,8 @@ fun ServerConfigListScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(
                                 modifier = Modifier.weight(1f)
@@ -123,11 +126,15 @@ fun ServerConfigListScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Icon(
-                                imageVector = Icons.Default.Storage,
-                                contentDescription = "Server Configuration",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                            IconButton(
+                                onClick = { onEdit(config) }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Server Configuration",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                     }
                 }

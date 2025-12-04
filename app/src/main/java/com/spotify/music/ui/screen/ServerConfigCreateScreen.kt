@@ -40,16 +40,19 @@ import com.spotify.music.data.ServerConfigRepository
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ServerConfigCreateScreen(
+    editingConfig: ServerConfig? = null,
     onCancel: () -> Unit,
     onSave: (ServerConfig) -> Unit
 ) {
     val context = LocalContext.current
-    var name by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(editingConfig?.name ?: "") }
+    var url by remember { mutableStateOf(editingConfig?.url ?: "") }
+    var username by remember { mutableStateOf(editingConfig?.username ?: "") }
+    var password by remember { mutableStateOf(editingConfig?.password ?: "") }
     var passwordVisible by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val isEditing = editingConfig != null
 
     // 拦截返回键
     BackHandler {
@@ -59,7 +62,7 @@ fun ServerConfigCreateScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Create Server Config") },
+                title = { Text(if (isEditing) "Edit Server Config" else "Create Server Config") },
                 navigationIcon = {
                     IconButton(onClick = onCancel) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -138,14 +141,30 @@ fun ServerConfigCreateScreen(
                             errorMessage = "Please fill in all fields"
                             return@Button
                         }
-                        val config = ServerConfig(
-                            id = java.util.UUID.randomUUID().toString(),
-                            name = name,
-                            url = url,
-                            username = username,
-                            password = password
-                        )
-                        ServerConfigRepository.add(context, config)
+
+                        val config = if (isEditing) {
+                            // 编辑模式：更新现有配置
+                            editingConfig!!.copy(
+                                name = name,
+                                url = url,
+                                username = username,
+                                password = password
+                            ).also { updated ->
+                                ServerConfigRepository.update(context, updated)
+                            }
+                        } else {
+                            // 创建模式：创建新配置
+                            ServerConfig(
+                                id = java.util.UUID.randomUUID().toString(),
+                                name = name,
+                                url = url,
+                                username = username,
+                                password = password
+                            ).also { new ->
+                                ServerConfigRepository.add(context, new)
+                            }
+                        }
+
                         onSave(config)
                     },
                     modifier = Modifier.weight(1f)
