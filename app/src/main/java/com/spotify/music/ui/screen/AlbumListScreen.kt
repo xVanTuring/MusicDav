@@ -24,6 +24,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -118,7 +119,7 @@ fun AlbumListScreen(
                     .padding(paddingValues)
             ) {
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 160.dp),
+                    columns = GridCells.Fixed(2),
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(16.dp),
@@ -174,14 +175,14 @@ fun AlbumGridItem(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(1f)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
-            )
+            ),
+        horizontalAlignment = Alignment.Start
     ) {
         // 专辑封面
         val webDavConfig = album.getWebDavConfig(context)
@@ -189,9 +190,10 @@ fun AlbumGridItem(
             .set("Authorization", Credentials.basic(webDavConfig.username, webDavConfig.password))
             .build()
 
-        // Default album background with Album icon
         Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f),
             contentAlignment = Alignment.Center
         ) {
             if (album.coverImageUrl != null) {
@@ -221,7 +223,7 @@ fun AlbumGridItem(
             }
         }
 
-        // 专辑名显示在封面左下角
+        // 专辑名显示在封面下面，靠左对齐
         Text(
             text = album.name,
             style = MaterialTheme.typography.bodyMedium.copy(
@@ -231,9 +233,8 @@ fun AlbumGridItem(
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Start,
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(14.dp)
                 .fillMaxWidth()
+                .padding(top = 8.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)
         )
     }
 }
