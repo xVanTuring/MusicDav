@@ -113,11 +113,16 @@ class PlaylistStateController {
 
                 val duration = mediaController.duration.takeIf { it > 0 } ?: 0L
                 val currentPosition = mediaController.currentPosition
+                val currentIndex = mediaController.currentMediaItemIndex
+
+                // 检查 MediaController 是否有媒体内容，如果有则同步播放列表
+                syncPlaylistFromMediaController(mediaController, currentIndex)
+
                 _state.value = _state.value.copy(
                     duration = duration,
                     currentPosition = currentPosition,
                     isPlaying = mediaController.isPlaying,
-                    currentIndex = mediaController.currentMediaItemIndex
+                    currentIndex = currentIndex
                 )
 
                 // MediaController 连接成功后，就认为是就绪的
@@ -274,6 +279,46 @@ class PlaylistStateController {
 
     fun seekToPrevious() {
         controller?.seekToPrevious()
+    }
+
+    private fun syncPlaylistFromMediaController(mediaController: MediaController, currentIndex: Int) {
+        try {
+            val mediaItemCount = mediaController.mediaItemCount
+
+            // 如果 MediaController 有媒体内容但本地 songs 列表为空，需要同步
+            if (mediaItemCount > 0 && state.songs.isEmpty()) {
+                Log.d("PlaylistStateController", "Syncing playlist from MediaController, items count: $mediaItemCount")
+
+                val syncedSongs = mutableListOf<MusicFile>()
+
+                for (i in 0 until mediaItemCount) {
+                    val mediaItem = mediaController.getMediaItemAt(i)
+                    val uri = mediaItem.localConfiguration?.uri?.toString()
+                    val title = mediaItem.mediaMetadata?.title?.toString() ?: "Unknown"
+
+                    if (uri != null) {
+                        // 从 URL 推断文件名
+                        val fileName = uri.substringAfterLast('/')
+                        val musicFile = MusicFile(
+                            name = if (title != "Unknown") title else fileName,
+                            url = uri,
+                            path = ""
+                        )
+                        syncedSongs.add(musicFile)
+                    }
+                }
+
+                if (syncedSongs.isNotEmpty()) {
+                    _state.value = _state.value.copy(songs = syncedSongs)
+                    Log.d("PlaylistStateController", "Synced ${syncedSongs.size} songs from MediaController")
+                }
+            } else if (mediaItemCount > 0 && state.songs.isNotEmpty()) {
+                // 如果都有内容，检查是否需要同步当前索引
+                Log.d("PlaylistStateController", "Both MediaController and local playlist have content, checking sync")
+            }
+        } catch (error: Exception) {
+            Log.e("PlaylistStateController", "Error syncing playlist from MediaController: ${error.message}", error)
+        }
     }
 
     suspend fun waitForConnection(timeoutMs: Long = 5000): Boolean {

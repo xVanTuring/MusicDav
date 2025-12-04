@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         // 打印已保存的配置信息
-        printConfigurations()
+        // printConfigurations()
 
         setContent {
             MusicDavTheme {
@@ -200,15 +200,18 @@ fun MainTabScreen(
     var selectedTabIndex by remember { mutableStateOf(0) }
     var creatingAlbum by remember { mutableStateOf(false) }
     var creatingServerConfig by remember { mutableStateOf(false) }
+    var editingServerConfig by remember { mutableStateOf<com.spotify.music.data.ServerConfig?>(null) }
     var serverConfigsRefreshKey by remember { mutableStateOf(0) }
     val context = LocalContext.current
 
     // 拦截返回键处理创建状态
-    androidx.activity.compose.BackHandler(enabled = creatingAlbum || creatingServerConfig) {
+    androidx.activity.compose.BackHandler(enabled = creatingAlbum || creatingServerConfig || editingServerConfig != null) {
         if (creatingAlbum) {
             creatingAlbum = false
         } else if (creatingServerConfig) {
             creatingServerConfig = false
+        } else if (editingServerConfig != null) {
+            editingServerConfig = null
         }
     }
 
@@ -236,13 +239,17 @@ fun MainTabScreen(
         return
     }
 
-    if (creatingServerConfig) {
+    if (creatingServerConfig || editingServerConfig != null) {
         ServerConfigCreateScreen(
-            onCancel = { creatingServerConfig = false },
-            onSave = { config ->
-                // 服务器配置已保存，返回到专辑创建界面
+            editingConfig = editingServerConfig,
+            onCancel = {
                 creatingServerConfig = false
-                creatingAlbum = true
+                editingServerConfig = null
+            },
+            onSave = { config ->
+                // 服务器配置已保存
+                creatingServerConfig = false
+                editingServerConfig = null
                 serverConfigsRefreshKey++
             }
         )
@@ -328,6 +335,7 @@ fun MainTabScreen(
                     // 服务器配置列表标签页
                     ServerConfigListScreen(
                         onCreate = { creatingServerConfig = true },
+                        onEdit = { config -> editingServerConfig = config },
                         refreshKey = serverConfigsRefreshKey,
                         modifier = Modifier.fillMaxSize()
                     )
