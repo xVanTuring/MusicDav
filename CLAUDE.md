@@ -113,3 +113,26 @@ app/src/main/java/com/spotify/music/
 - Music file listings are cached to reduce network requests
 - Cover images are loaded asynchronously and cached as Base64
 - ExoPlayer handles audio caching automatically
+
+
+### How to display image from webdav properly
+```kotlin
+val config = album.getWebDavConfig(context)
+
+
+val headers = NetworkHeaders.Builder()
+   .set("Authorization", Credentials.basic(config.username, config.password))
+   .build()
+AsyncImage(
+   model = coil3.request.ImageRequest.Builder(LocalContext.current)
+         .data(coverImageUrl)
+         .httpHeaders(headers)
+         .build(),
+)
+```
+
+### how to check any compile bug
+run this command
+```bash
+./gradlew assembleDebug -x lintDebug
+```

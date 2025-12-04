@@ -77,7 +77,7 @@ fun AlbumDetailScreen(
                     Text(
                         text = album.name,
                         maxLines = 1,
-                        modifier = modifier
+                        modifier = Modifier
                             .fillMaxWidth()
                             .basicMarquee(),
                         softWrap = false
@@ -122,6 +122,9 @@ fun AlbumDetailScreen(
                 coroutineScope.launch {
                     // 加载当前专辑的歌曲列表到播放器，然后播放选中的歌曲
                     playlistController.loadPlaylist(currentAlbumSongs)
+                    // 在播放前设置当前专辑的封面映射和WebDAV配置
+                    playlistController.setSongAlbumCovers(currentAlbumSongs, album.coverImageUrl)
+                    playlistController.setCurrentWebDavConfig(webDavConfig)
                     playlistController.setPlaylistAndPlay(index)
                 }
             },

@@ -32,15 +32,29 @@ data class PlaylistState(
     val currentIndex: Int = -1,
     val isPlaying: Boolean = false,
     val currentPosition: Long = 0L,
-    val duration: Long = 0L
+    val duration: Long = 0L,
+    // 当前播放歌曲的专辑封面URL（来自专辑配置）
+    val currentAlbumCoverUrl: String? = null,
+    // 当前播放歌曲的内置封面URL（来自音乐文件本身）
+    val currentEmbeddedCoverUrl: String? = null,
+    // 歌曲URL到专辑封面URL的映射
+    val songToAlbumCoverMap: Map<String, String?> = emptyMap(),
+    // 当前播放专辑的WebDAV配置（用于加载封面图片）
+    val currentWebDavConfig: WebDavConfig? = null
 ) {
-    val currentSong: MusicFile? 
+    val currentSong: MusicFile?
         get() = songs.getOrNull(currentIndex)
-    
-    val hasNext: Boolean 
+
+    // 获取当前歌曲的封面URL，优先级：内置封面 > 专辑封面
+    val currentCoverUrl: String?
+        get() = currentEmbeddedCoverUrl ?: currentSong?.let { song ->
+            songToAlbumCoverMap[song.url]
+        }
+
+    val hasNext: Boolean
         get() = currentIndex < songs.size - 1
-    
-    val hasPrevious: Boolean 
+
+    val hasPrevious: Boolean
         get() = currentIndex > 0
 }
 

@@ -55,6 +55,27 @@ class PlaylistStateController {
         }
     }
 
+    fun setCurrentAlbumCover(coverUrl: String?) {
+        _state.value = _state.value.copy(currentAlbumCoverUrl = coverUrl)
+    }
+
+    // 设置歌曲到专辑封面的映射
+    fun setSongAlbumCovers(songs: List<MusicFile>, albumCoverUrl: String?) {
+        val songToAlbumCoverMap = songs.associateBy({ it.url }, { albumCoverUrl })
+        // 合并现有的映射，而不是完全替换
+        val newMap = _state.value.songToAlbumCoverMap.toMutableMap()
+        newMap.putAll(songToAlbumCoverMap)
+
+        _state.value = _state.value.copy(
+            songToAlbumCoverMap = newMap
+        )
+    }
+
+    // 设置当前播放专辑的WebDAV配置
+    fun setCurrentWebDavConfig(webDavConfig: WebDavConfig?) {
+        _state.value = _state.value.copy(currentWebDavConfig = webDavConfig)
+    }
+
     suspend fun initialize(context: android.content.Context) {
         val sessionToken = SessionToken(
             context,
@@ -86,7 +107,31 @@ class PlaylistStateController {
                     }
 
                     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
-                        // Metadata updated
+                        // 检查是否有内置封面
+                        val artworkUri = mediaMetadata.artworkUri
+                        val artworkData = mediaMetadata.artworkData
+                        val currentSong = _state.value.currentSong
+
+                        if (currentSong != null) {
+                            // 优先使用 artworkUri，如果为null则尝试使用 artworkData
+                            if (artworkUri != null) {
+                                // 更新当前歌曲的内置封面
+                                _state.value = _state.value.copy(
+                                    currentEmbeddedCoverUrl = artworkUri.toString()
+                                )
+                            } else if (artworkData != null && artworkData.isNotEmpty()) {
+                                // 将 artworkData 转换为 Base64 URL
+                                val base64Cover = android.util.Base64.encodeToString(artworkData, android.util.Base64.NO_WRAP)
+                                val mimeType = when (mediaMetadata.artworkDataType) {
+                                    MediaMetadata.PICTURE_TYPE_FRONT_COVER -> "image/jpeg"
+                                    MediaMetadata.PICTURE_TYPE_ARTIST_PERFORMER -> "image/png"
+                                    else -> "image/jpeg"
+                                }
+                                _state.value = _state.value.copy(
+                                    currentEmbeddedCoverUrl = "data:$mimeType;base64,$base64Cover"
+                                )
+                            }
+                        }
                     }
 
                     override fun onEvents(player: Player, events: Player.Events) {
@@ -99,7 +144,8 @@ class PlaylistStateController {
                             if (_state.value.currentIndex != currentIndex) {
                                 _state.value = _state.value.copy(
                                     duration = duration,
-                                    currentIndex = currentIndex
+                                    currentIndex = currentIndex,
+                                    currentEmbeddedCoverUrl = null // 重置内置封面
                                 )
                             } else {
                                 // 只更新duration，保持currentIndex不变
@@ -179,8 +225,12 @@ class PlaylistStateController {
         // 用户点击歌曲时，设置播放列表并播放
         if (state.songs.isEmpty()) return
 
-        // 立即更新UI状态以提供即时反馈
-        _state.value = _state.value.copy(currentIndex = index, isPlaying = true)
+        // 立即更新UI状态以提供即时反馈，同时重置内置封面
+        _state.value = _state.value.copy(
+            currentIndex = index,
+            isPlaying = true,
+            currentEmbeddedCoverUrl = null // 重置内置封面，等待MediaMetadata更新
+        )
 
         // 等待控制器完全就绪（不仅仅是连接）
         if (!isControllerReady || controller == null) {
@@ -209,11 +259,6 @@ class PlaylistStateController {
                 val mediaItems = state.songs.map { song ->
                     MediaItem.Builder()
                         .setUri(song.url)
-                        .setMediaMetadata(
-                            MediaMetadata.Builder()
-                                .setTitle(song.name.substringBeforeLast('.'))
-                                .build()
-                        )
                         .build()
                 }
 
@@ -248,11 +293,6 @@ class PlaylistStateController {
                     val mediaItems = state.songs.map { song ->
                         MediaItem.Builder()
                             .setUri(song.url)
-                            .setMediaMetadata(
-                                MediaMetadata.Builder()
-                                    .setTitle(song.name.substringBeforeLast('.'))
-                                    .build()
-                            )
                             .build()
                     }
                     // 先设置 Service 中 ExoPlayer 的播放列表

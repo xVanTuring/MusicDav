@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -28,7 +31,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.clip
+import coil3.compose.AsyncImage
+import coil3.network.NetworkHeaders
+import coil3.network.httpHeaders
 import com.spotify.music.data.PlaylistState
+import com.spotify.music.data.WebDavConfig
+import okhttp3.Credentials
 
 @Composable
 fun BottomPlayerBar(
@@ -89,23 +99,84 @@ fun BottomPlayerBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Song info
-                Column(
-                    modifier = Modifier.weight(1f)
+                // Album cover and song info
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(
-                        text = playlistState.currentSong?.name?.substringBeforeLast('.') ?: "",
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${formatTime(playlistState.currentPosition)} / ${formatTime(playlistState.duration)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    // Album cover
+                    if (playlistState.currentCoverUrl != null) {
+                        val coverUrl = playlistState.currentCoverUrl!!
+
+                        if (playlistState.currentWebDavConfig != null &&
+                            playlistState.currentWebDavConfig.username.isNotBlank() &&
+                            playlistState.currentWebDavConfig.password.isNotBlank() &&
+                            coverUrl.startsWith("http")) {
+                            // WebDAV URL with authentication
+                            val headers = NetworkHeaders.Builder()
+                                .set("Authorization", Credentials.basic(playlistState.currentWebDavConfig.username, playlistState.currentWebDavConfig.password))
+                                .build()
+
+                            AsyncImage(
+                                model = coil3.request.ImageRequest.Builder(LocalContext.current)
+                                    .data(coverUrl)
+                                    .httpHeaders(headers)
+                                    .build(),
+                                contentDescription = "Album Cover",
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        } else {
+                            // Local file or no authentication needed
+                            AsyncImage(
+                                model = coverUrl,
+                                contentDescription = "Album Cover",
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        }
+                    } else {
+                        // Default music note icon when no cover
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    RoundedCornerShape(8.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = "Default Album",
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Song info
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = playlistState.currentSong?.name?.substringBeforeLast('.') ?: "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${formatTime(playlistState.currentPosition)} / ${formatTime(playlistState.duration)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                
+
                 // Controls
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -121,18 +192,18 @@ fun BottomPlayerBar(
                             modifier = Modifier.size(32.dp)
                         )
                     }
-                    
+
                     IconButton(onClick = onPlayPause) {
                         Icon(
-                            imageVector = if (playlistState.isPlaying) 
-                                Icons.Default.Pause 
-                            else 
+                            imageVector = if (playlistState.isPlaying)
+                                Icons.Default.Pause
+                            else
                                 Icons.Default.PlayArrow,
                             contentDescription = if (playlistState.isPlaying) "Pause" else "Play",
                             modifier = Modifier.size(40.dp)
                         )
                     }
-                    
+
                     IconButton(
                         onClick = onNext,
                         enabled = playlistState.hasNext
