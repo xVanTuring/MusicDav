@@ -1,6 +1,7 @@
 package com.spotify.music.ui.screen
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -11,6 +12,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -72,7 +74,14 @@ fun AlbumDetailScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    MarqueeText(text = album.name)
+                    Text(
+                        text = album.name,
+                        maxLines = 1,
+                        modifier = modifier
+                            .fillMaxWidth()
+                            .basicMarquee(),
+                        softWrap = false
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
