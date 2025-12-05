@@ -201,18 +201,27 @@ class MusicCacheManager private constructor(private val context: Context) {
                 val entry = cachedFiles[cacheKey]
 
                 if (entry != null) {
-                    // 使用已加载的元数据
-                    totalSize += entry.size
+                    // 使用已加载的元数据，同时验证文件大小
+                    val actualSize = file.length()
+                    if (actualSize != entry.size) {
+                        // 更新文件大小
+                        val updatedEntry = entry.copy(size = actualSize)
+                        cachedFiles[cacheKey] = updatedEntry
+                    }
+                    totalSize += actualSize
                 } else {
                     // 如果没有元数据，创建基本条目
-                    val newEntry = CacheEntry(
-                        file = file,
-                        url = "", // URL无法从文件恢复
-                        lastAccessed = file.lastModified(),
-                        size = file.length()
-                    )
-                    cachedFiles[cacheKey] = newEntry
-                    totalSize += file.length()
+                    val fileSize = file.length()
+                    if (fileSize > 0) { // 只添加有效文件
+                        val newEntry = CacheEntry(
+                            file = file,
+                            url = "", // URL无法从文件恢复
+                            lastAccessed = file.lastModified(),
+                            size = fileSize
+                        )
+                        cachedFiles[cacheKey] = newEntry
+                        totalSize += fileSize
+                    }
                 }
             }
         }
@@ -368,11 +377,27 @@ class MusicCacheManager private constructor(private val context: Context) {
             return cachedFiles.values.map { entry ->
                 // 尝试从URL中提取文件名
                 val fileName = try {
-                    entry.url.substringAfterLast('/').takeIf { it.isNotEmpty() }
-                        ?: entry.url.substringAfterLast('=').takeIf { it.isNotEmpty() }
-                        ?: "Unknown"
+                    if (entry.url.isNotEmpty()) {
+                        // 尝试多种方式提取文件名
+                        var name = entry.url.substringAfterLast('/').takeIf { it.isNotEmpty() }
+                        if (name == null || name.contains('?')) {
+                            // 如果包含查询参数，进一步处理
+                            name = name?.substringBefore('?') ?: entry.url.substringAfterLast('=').takeIf { it.isNotEmpty() }
+                        }
+                        if (name != null && name.isNotEmpty()) {
+                            // 移除常见的参数后缀
+                            name = name.replace(Regex("\\?.*$"), "")
+                            name.trim()
+                        } else {
+                            // 无法从URL提取，使用缓存键的一部分
+                            "缓存文件_${entry.file.name.take(8)}"
+                        }
+                    } else {
+                        // URL为空，使用缓存键的一部分
+                        "缓存文件_${entry.file.name.take(8)}"
+                    }
                 } catch (e: Exception) {
-                    "Unknown"
+                    "缓存文件_${entry.file.name.take(8)}"
                 }
 
                 CachedFileInfo(
