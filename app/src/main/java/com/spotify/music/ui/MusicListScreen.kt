@@ -34,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.DownloadDone
+import com.spotify.music.cache.MusicCacheManager
 import com.spotify.music.data.MusicFile
 import com.spotify.music.data.WebDavConfig
 import com.spotify.music.webdav.WebDavClient
@@ -52,7 +54,8 @@ fun MusicListScreen(
     bottomBar: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     showTopBar: Boolean = true,
-    externalRefreshTrigger: (() -> Unit)? = null
+    externalRefreshTrigger: (() -> Unit)? = null,
+    cacheManager: MusicCacheManager? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var musicFiles by remember { mutableStateOf<List<MusicFile>>(emptyList()) }
@@ -217,7 +220,8 @@ fun MusicListScreen(
                 errorMessage = errorMessage,
                 musicFiles = musicFiles,
                 currentPlayingSong = currentPlayingSong,
-                onSongSelected = onSongSelected
+                onSongSelected = onSongSelected,
+                cacheManager = cacheManager
             )
         }
     } else {
@@ -231,7 +235,8 @@ fun MusicListScreen(
                 errorMessage = errorMessage,
                 musicFiles = musicFiles,
                 currentPlayingSong = currentPlayingSong,
-                onSongSelected = onSongSelected
+                onSongSelected = onSongSelected,
+                cacheManager = cacheManager
             )
         }
     }
@@ -244,7 +249,8 @@ private fun Content(
     errorMessage: String?,
     musicFiles: List<MusicFile>,
     currentPlayingSong: MusicFile?,
-    onSongSelected: (Int, MusicFile) -> Unit
+    onSongSelected: (Int, MusicFile) -> Unit,
+    cacheManager: MusicCacheManager?
 ) {
     Box(
         modifier = Modifier
@@ -258,6 +264,20 @@ private fun Content(
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
+                }
+            }
+            !musicFiles.isEmpty() -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    itemsIndexed(musicFiles) { index, musicFile ->
+                        MusicListItem(
+                            musicFile = musicFile,
+                            isPlaying = currentPlayingSong != null && musicFile.url == currentPlayingSong.url,
+                            isCached = cacheManager?.getCachedFile(musicFile.url) != null,
+                            onClick = { onSongSelected(index, musicFile) }
+                        )
+                    }
                 }
             }
             errorMessage != null -> {
@@ -289,19 +309,6 @@ private fun Content(
                     )
                 }
             }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    itemsIndexed(musicFiles) { index, musicFile ->
-                        MusicListItem(
-                            musicFile = musicFile,
-                            isPlaying = currentPlayingSong != null && musicFile.url == currentPlayingSong.url,
-                            onClick = { onSongSelected(index, musicFile) }
-                        )
-                    }
-                }
-            }
         }
     }
 }
@@ -310,6 +317,7 @@ private fun Content(
 fun MusicListItem(
     musicFile: MusicFile,
     isPlaying: Boolean,
+    isCached: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -331,16 +339,28 @@ fun MusicListItem(
             Icon(
                 imageVector = Icons.Default.MusicNote,
                 contentDescription = null,
-                tint = if (isPlaying) 
-                    MaterialTheme.colorScheme.primary 
-                else 
+                tint = if (isPlaying)
+                    MaterialTheme.colorScheme.primary
+                else
                     MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
+        trailingContent = if (isCached) {
+            {
+                Icon(
+                    imageVector = Icons.Default.DownloadDone,
+                    contentDescription = "Cached",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        } else {
+            null
+        },
         colors = ListItemDefaults.colors(
-            containerColor = if (isPlaying) 
-                MaterialTheme.colorScheme.primaryContainer 
-            else 
+            containerColor = if (isPlaying)
+                MaterialTheme.colorScheme.primaryContainer
+            else
                 MaterialTheme.colorScheme.surface
         ),
         modifier = modifier.clickable(onClick = onClick)

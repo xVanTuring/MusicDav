@@ -24,6 +24,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
+import com.spotify.music.cache.MusicCacheManager
 import com.spotify.music.data.Album
 import com.spotify.music.data.ServerConfigRepository
 import com.spotify.music.player.PlaylistStateController
@@ -42,10 +44,12 @@ fun AlbumDetailScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val cacheManager = remember { MusicCacheManager.getInstance(context) }
 
     // 存储当前专辑的歌曲列表
     var currentAlbumSongs by remember { mutableStateOf<List<com.spotify.music.data.MusicFile>>(emptyList()) }
     var refreshTrigger by remember { mutableStateOf(0) }
+    var hasTriedInitialRefresh by remember { mutableStateOf(false) }
 
     // 拦截返回键，返回到专辑列表页面
     BackHandler {
@@ -68,6 +72,56 @@ fun AlbumDetailScreen(
     // 设置 WebDAV 凭据
     LaunchedEffect(webDavConfig) {
         playlistController.setCredentials(webDavConfig)
+    }
+
+    // 初始加载时刷新专辑详情
+    LaunchedEffect(album.name + album.directoryUrl) {
+        if (!hasTriedInitialRefresh) {
+            hasTriedInitialRefresh = true
+            coroutineScope.launch {
+                try {
+                    // 先加载缓存数据（如果有）
+                    val cachedFiles = com.spotify.music.data.PlaylistCache.load(context, album.directoryUrl)
+                    if (cachedFiles.isNotEmpty()) {
+                        currentAlbumSongs = cachedFiles
+                    }
+
+                    // 尝试获取最新数据
+                    val webDavClient = com.spotify.music.webdav.WebDavClient()
+                    val effectiveConfig = if (album.directoryUrl != null) {
+                        webDavConfig.copy(url = album.directoryUrl)
+                    } else {
+                        webDavConfig
+                    }
+
+                    webDavClient.fetchMusicFiles(effectiveConfig)
+                        .onSuccess { files ->
+                            currentAlbumSongs = files
+                            com.spotify.music.data.PlaylistCache.save(context, album.directoryUrl, files)
+                        }
+                        .onFailure { e ->
+                            // 如果已经有缓存数据，显示提示
+                            if (cachedFiles.isNotEmpty()) {
+                                Toast.makeText(
+                                    context,
+                                    "无法获取最新数据，使用缓存列表",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                } catch (e: Exception) {
+                    // 如果已经有缓存数据，显示提示
+                    val cachedFiles = com.spotify.music.data.PlaylistCache.load(context, album.directoryUrl)
+                    if (cachedFiles.isNotEmpty()) {
+                        Toast.makeText(
+                            context,
+                            "无法获取最新数据，使用缓存列表",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+        }
     }
 
     Scaffold(
@@ -148,7 +202,8 @@ fun AlbumDetailScreen(
             },
             modifier = modifier.padding(paddingValues),
             showTopBar = false, // Hide MusicListScreen's top bar
-            externalRefreshTrigger = { refreshTrigger } // Pass refresh trigger value
+            externalRefreshTrigger = { refreshTrigger }, // Pass refresh trigger value
+            cacheManager = cacheManager // Pass cache manager
         )
     }
 }

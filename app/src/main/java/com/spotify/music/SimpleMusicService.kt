@@ -13,6 +13,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.spotify.music.cache.CachedHttpDataSource
+import com.spotify.music.cache.MusicCacheManager
 import okhttp3.Credentials
 
 class SimpleMusicService : MediaSessionService() {
@@ -20,7 +22,8 @@ class SimpleMusicService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var player: ExoPlayer? = null
     private var httpDataSourceFactory: DefaultHttpDataSource.Factory? = null
-    
+    private var cacheManager: MusicCacheManager? = null
+
     // Store auth credentials for WebDAV
     private var webDavUsername: String? = null
     private var webDavPassword: String? = null
@@ -51,20 +54,28 @@ class SimpleMusicService : MediaSessionService() {
         super.onCreate()
         instance = this
         val context = this
-        
+
+        // Initialize cache manager
+        cacheManager = MusicCacheManager.getInstance(context)
+
         // Get credentials from static storage
         webDavUsername = staticUsername
         webDavPassword = staticPassword
-        
+
         // Create DataSource factory with auth support
         httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent("MusicDav/1.0")
-        
+
         // Apply auth headers if credentials are available
         updateAuthHeaders()
 
+        // Create cached data source factory
+        val cachedDataSourceFactory = cacheManager?.let { cache ->
+            CachedHttpDataSource.Factory(httpDataSourceFactory!!, cache)
+        } ?: httpDataSourceFactory
+
         player = ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpDataSourceFactory!!))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(cachedDataSourceFactory as DataSource.Factory))
             .build()
 
         val sessionIntent = PendingIntent.getActivity(
@@ -120,9 +131,14 @@ class SimpleMusicService : MediaSessionService() {
             // Release old player
             existingPlayer.release()
             
+            // Create cached data source factory
+            val cachedDataSourceFactory = cacheManager?.let { cache ->
+                CachedHttpDataSource.Factory(httpDataSourceFactory!!, cache)
+            } ?: httpDataSourceFactory
+
             // Create new player with updated credentials
             val newPlayer = ExoPlayer.Builder(this)
-                .setMediaSourceFactory(DefaultMediaSourceFactory(httpDataSourceFactory!!))
+                .setMediaSourceFactory(DefaultMediaSourceFactory(cachedDataSourceFactory as DataSource.Factory))
                 .build()
                 .apply {
                     if (mediaItems.isNotEmpty()) {
