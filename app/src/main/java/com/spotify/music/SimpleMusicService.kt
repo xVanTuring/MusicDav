@@ -13,7 +13,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import androidx.media3.Player
+import androidx.media3.common.Player
 import com.spotify.music.cache.CachedHttpDataSource
 import com.spotify.music.cache.MusicCacheManager
 import com.spotify.music.data.PlayMode
