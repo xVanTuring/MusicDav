@@ -27,6 +27,13 @@ data class MusicFile(
     val modifiedDate: Long = 0L
 )
 
+// 播放模式枚举
+enum class PlayMode {
+    PLAY_ONCE,       // 播放完自动结束
+    REPEAT_SINGLE,   // 单曲循环
+    REPEAT_ALL       // 列表循环
+}
+
 data class PlaylistState(
     val songs: List<MusicFile> = emptyList(),
     val currentIndex: Int = -1,
@@ -42,7 +49,9 @@ data class PlaylistState(
     // 歌曲URL到专辑封面URL的映射
     val songToAlbumCoverMap: Map<String, String?> = emptyMap(),
     // 当前播放专辑的WebDAV配置（用于加载封面图片）
-    val currentWebDavConfig: WebDavConfig? = null
+    val currentWebDavConfig: WebDavConfig? = null,
+    // 播放模式
+    val playMode: PlayMode = PlayMode.PLAY_ONCE
 ) {
     val currentSong: MusicFile?
         get() = songs.getOrNull(currentIndex)

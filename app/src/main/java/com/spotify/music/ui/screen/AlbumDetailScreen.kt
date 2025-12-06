@@ -197,6 +197,9 @@ fun AlbumDetailScreen(
                     },
                     onPrevious = {
                         playlistController.seekToPrevious()
+                    },
+                    onTogglePlayMode = {
+                        playlistController.togglePlayMode()
                     }
                 )
             },

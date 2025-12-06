@@ -285,6 +285,9 @@ fun MainTabScreen(
                     onPrevious = {
                         playlistController.seekToPrevious()
                     },
+                    onTogglePlayMode = {
+                        playlistController.togglePlayMode()
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
 

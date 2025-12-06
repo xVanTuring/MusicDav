@@ -16,6 +16,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
@@ -37,6 +39,7 @@ import coil3.compose.AsyncImage
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import com.spotify.music.data.PlaylistState
+import com.spotify.music.data.PlayMode
 import com.spotify.music.data.WebDavConfig
 import okhttp3.Credentials
 
@@ -46,6 +49,7 @@ fun BottomPlayerBar(
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
+    onTogglePlayMode: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
 //    if (playlistState.currentSong == null) return
@@ -182,6 +186,31 @@ fun BottomPlayerBar(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // 播放模式按钮
+                    IconButton(
+                        onClick = onTogglePlayMode,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = when (playlistState.playMode) {
+                                PlayMode.REPEAT_SINGLE -> Icons.Default.RepeatOne
+                                PlayMode.REPEAT_ALL -> Icons.Default.Repeat
+                                PlayMode.PLAY_ONCE -> Icons.Default.Repeat
+                            },
+                            contentDescription = when (playlistState.playMode) {
+                                PlayMode.REPEAT_SINGLE -> "单曲循环"
+                                PlayMode.REPEAT_ALL -> "列表循环"
+                                PlayMode.PLAY_ONCE -> "顺序播放"
+                            },
+                            tint = when (playlistState.playMode) {
+                                PlayMode.REPEAT_SINGLE -> MaterialTheme.colorScheme.primary
+                                PlayMode.REPEAT_ALL -> MaterialTheme.colorScheme.primary
+                                PlayMode.PLAY_ONCE -> MaterialTheme.colorScheme.onSurface
+                            },
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
                     IconButton(
                         onClick = onPrevious,
                         enabled = playlistState.hasPrevious

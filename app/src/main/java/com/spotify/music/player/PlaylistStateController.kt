@@ -20,6 +20,7 @@ import androidx.media3.session.SessionToken
 import com.spotify.music.SimpleMusicService
 import com.spotify.music.data.MusicFile
 import com.spotify.music.data.PlaylistState
+import com.spotify.music.data.PlayMode
 import com.spotify.music.data.WebDavConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -401,6 +402,29 @@ class PlaylistStateController {
 
         Log.d("PlaylistStateController", "Connection check result - ready: $isControllerReady")
         return isControllerReady
+    }
+
+    // 切换播放模式
+    fun togglePlayMode() {
+        val currentMode = _state.value.playMode
+        val nextMode = when (currentMode) {
+            PlayMode.PLAY_ONCE -> PlayMode.REPEAT_ALL
+            PlayMode.REPEAT_ALL -> PlayMode.REPEAT_SINGLE
+            PlayMode.REPEAT_SINGLE -> PlayMode.PLAY_ONCE
+        }
+        _state.value = _state.value.copy(playMode = nextMode)
+        // 通知 Service 更新播放模式
+        SimpleMusicService.setPlayMode(nextMode)
+        Log.d("PlaylistStateController", "播放模式切换: $currentMode -> $nextMode")
+    }
+
+    // 设置播放模式
+    fun setPlayMode(mode: PlayMode) {
+        if (_state.value.playMode != mode) {
+            _state.value = _state.value.copy(playMode = mode)
+            SimpleMusicService.setPlayMode(mode)
+            Log.d("PlaylistStateController", "设置播放模式: $mode")
+        }
     }
 
     fun release() {
