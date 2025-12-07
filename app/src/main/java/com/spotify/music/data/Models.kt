@@ -70,7 +70,6 @@ data class PlaylistState(
             val result = embedded ?: album
 
             // 调试：记录最终决定的封面
-            android.util.Log.d("PlaylistState", "最终封面选择: embedded=${embedded != null}, album=${album != null}, result=${result?.take(50)}")
 
             return result
         }
