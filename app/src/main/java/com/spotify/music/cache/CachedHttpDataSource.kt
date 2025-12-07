@@ -76,10 +76,12 @@ class CachedHttpDataSource(
         val upstreamLength = upstream!!.open(dataSpec)
 
         // 创建流式缓存输入流
+        val totalSize = if (upstreamLength != Long.MAX_VALUE) upstreamLength else null
         inputStream = StreamingCachingInputStream(
             upstream!!,
             dataSpec.uri.toString(),
-            cacheManager
+            cacheManager,
+            totalSize
         )
 
         bytesRemaining = upstreamLength
@@ -141,18 +143,24 @@ class CachedHttpDataSource(
     private class StreamingCachingInputStream(
         private val upstream: HttpDataSource,
         private val url: String,
-        private val cacheManager: MusicCacheManager
+        private val cacheManager: MusicCacheManager,
+        private val totalSize: Long? // 总大小，可能未知
     ) : InputStream() {
 
         private var cacheOutput: java.io.FileOutputStream? = null
         private var isCachingEnabled = true
         private var upstreamClosed = false
         private val cacheFile = java.io.File(cacheManager.cacheDir, cacheManager.getCacheKey(url))
+        private var bytesReadTotal: Long = 0L
+        private var lastProgressUpdateTime: Long = 0L
+        private val progressUpdateThreshold = 64 * 1024L // 每64KB更新一次进度
 
         init {
             try {
                 // 创建缓存文件
                 cacheOutput = java.io.FileOutputStream(cacheFile)
+                // 开始缓存任务
+                cacheManager.startCaching(url, totalSize = totalSize)
             } catch (e: Exception) {
                 // 缓存失败，但不影响播放
                 isCachingEnabled = false
@@ -160,6 +168,8 @@ class CachedHttpDataSource(
                 if (cacheFile.exists()) {
                     cacheFile.delete()
                 }
+                // 标记缓存失败
+                cacheManager.failCaching(url)
             }
         }
 
@@ -174,18 +184,33 @@ class CachedHttpDataSource(
 
             val bytesRead = upstream.read(b, off, len)
 
-            // 同时写入缓存文件
-            if (bytesRead > 0 && isCachingEnabled && cacheOutput != null) {
-                try {
-                    cacheOutput!!.write(b, off, bytesRead)
-                    cacheOutput!!.flush() // 确保数据写入磁盘
-                } catch (e: Exception) {
-                    // 缓存写入失败，关闭缓存
-                    closeCache()
-                    isCachingEnabled = false
-                    // 删除不完整的缓存文件
-                    if (cacheFile.exists()) {
-                        cacheFile.delete()
+            if (bytesRead > 0) {
+                // 更新总读取字节数
+                bytesReadTotal += bytesRead
+
+                // 更新缓存进度（避免过于频繁）
+                val currentTime = System.currentTimeMillis()
+                if (bytesReadTotal >= progressUpdateThreshold &&
+                    (currentTime - lastProgressUpdateTime > 500 || bytesReadTotal % progressUpdateThreshold == 0L)) {
+                    cacheManager.updateCachingProgress(url, bytesReadTotal, totalSize)
+                    lastProgressUpdateTime = currentTime
+                }
+
+                // 同时写入缓存文件
+                if (isCachingEnabled && cacheOutput != null) {
+                    try {
+                        cacheOutput!!.write(b, off, bytesRead)
+                        cacheOutput!!.flush() // 确保数据写入磁盘
+                    } catch (e: Exception) {
+                        // 缓存写入失败，关闭缓存
+                        closeCache()
+                        isCachingEnabled = false
+                        // 删除不完整的缓存文件
+                        if (cacheFile.exists()) {
+                            cacheFile.delete()
+                        }
+                        // 标记缓存失败
+                        cacheManager.failCaching(url)
                     }
                 }
             }
@@ -201,19 +226,19 @@ class CachedHttpDataSource(
                 // 完成缓存
                 closeCache()
 
+                // 更新最终进度
+                cacheManager.updateCachingProgress(url, bytesReadTotal, totalSize)
+
                 // 如果缓存成功，记录到缓存管理器
                 if (isCachingEnabled && cacheFile.exists()) {
                     val size = cacheFile.length()
-                    GlobalScope.launch {
-                        try {
-                            cacheManager.registerCachedFile(url, cacheFile, size)
-                        } catch (e: Exception) {
-                            // 记录失败，但缓存文件仍然可用
-                        }
-                    }
-                } else if (cacheFile.exists()) {
+                    cacheManager.finishCaching(url, cacheFile, size)
+                } else {
                     // 如果缓存失败，删除文件
-                    cacheFile.delete()
+                    if (cacheFile.exists()) {
+                        cacheFile.delete()
+                    }
+                    cacheManager.failCaching(url)
                 }
             }
         }

@@ -37,6 +37,7 @@ fun CacheManagementScreen(
 
     var cacheStats by remember { mutableStateOf(cacheManager.getCacheStats()) }
     var cachedFiles by remember { mutableStateOf(cacheManager.getCachedFilesList()) }
+    var cachingTasks by remember { mutableStateOf(cacheManager.getCachingTasks()) }
     var isClearingCache by remember { mutableStateOf(false) }
 
     // 定期更新缓存统计和文件列表
@@ -45,6 +46,7 @@ fun CacheManagementScreen(
             kotlinx.coroutines.delay(1000) // 每秒更新一次
             cacheStats = cacheManager.getCacheStats()
             cachedFiles = cacheManager.getCachedFilesList()
+            cachingTasks = cacheManager.getCachingTasks()
         }
     }
 
@@ -135,6 +137,61 @@ fun CacheManagementScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+
+            // 正在缓存的任务
+            if (cachingTasks.isNotEmpty()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.MusicNote,
+                                contentDescription = "正在缓存",
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = "正在缓存的任务",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Divider()
+
+                        // 待缓存总大小
+                        val pendingTotalSize = cachingTasks.sumOf { it.totalSize ?: 0L }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("待缓存文件总大小:")
+                            Text(
+                                text = cacheManager.formatFileSize(pendingTotalSize),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        // 正在缓存的任务列表
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(cachingTasks) { task ->
+                                CachingTaskItem(task)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -304,6 +361,78 @@ private fun CachedFileItem(file: MusicCacheManager.CachedFileInfo) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CachingTaskItem(task: MusicCacheManager.CachingTaskInfo) {
+    val context = LocalContext.current
+    val cacheManager = remember { MusicCacheManager.getInstance(context) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // 缓存中图标
+                Icon(
+                    Icons.Default.MusicNote,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                )
+
+                // 文件信息
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = task.fileName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    // 进度文本
+                    val transferredText = cacheManager.formatFileSize(task.transferredSize)
+                    val totalText = task.totalSize?.let { cacheManager.formatFileSize(it) } ?: "未知"
+                    Text(
+                        text = "$transferredText / $totalText",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // 进度条
+                    LinearProgressIndicator(
+                        progress = { task.progressPercentage / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp),
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    // 进度百分比
+                    Text(
+                        text = "${String.format("%.1f", task.progressPercentage)}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }

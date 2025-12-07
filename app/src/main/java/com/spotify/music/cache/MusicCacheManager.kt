@@ -30,6 +30,8 @@ class MusicCacheManager private constructor(private val context: Context) {
 
     // 内存缓存，记录已缓存的文件
     private val cachedFiles = ConcurrentHashMap<String, CacheEntry>()
+    // 正在缓存的任务跟踪
+    private val cachingTasks = ConcurrentHashMap<String, CachingTask>()
 
     data class CacheEntry(
         val file: File,
@@ -37,6 +39,19 @@ class MusicCacheManager private constructor(private val context: Context) {
         val lastAccessed: Long,
         val size: Long
     )
+
+    data class CachingTask(
+        val url: String,
+        val fileName: String,
+        val totalSize: Long?, // 可能未知
+        var transferredSize: Long,
+        val startTime: Long = System.currentTimeMillis(),
+        var status: CachingStatus = CachingStatus.CACHING
+    )
+
+    enum class CachingStatus {
+        CACHING, COMPLETED, FAILED
+    }
 
     init {
         // 确保缓存目录存在
@@ -418,6 +433,135 @@ class MusicCacheManager private constructor(private val context: Context) {
         val lastAccessed: Long,
         val formattedSize: String
     )
+
+    data class CachingTaskInfo(
+        val url: String,
+        val fileName: String,
+        val totalSize: Long?,
+        val transferredSize: Long,
+        val startTime: Long,
+        val status: CachingStatus,
+        val progressPercentage: Float
+    )
+
+    /**
+     * 开始缓存一个文件
+     * @param url 文件URL
+     * @param fileName 文件名（可选，如果为空则从URL提取）
+     * @param totalSize 文件总大小（可选）
+     * @return 缓存键
+     */
+    fun startCaching(url: String, fileName: String? = null, totalSize: Long? = null): String {
+        val cacheKey = getCacheKey(url)
+        val finalFileName = fileName ?: extractFileNameFromUrl(url)
+
+        val task = CachingTask(
+            url = url,
+            fileName = finalFileName,
+            totalSize = totalSize,
+            transferredSize = 0L
+        )
+
+        cachingTasks[cacheKey] = task
+        Log.d("MusicCacheManager", "Started caching: $url, totalSize: $totalSize")
+        return cacheKey
+    }
+
+    /**
+     * 更新缓存进度
+     * @param url 文件URL
+     * @param transferred 已传输字节数
+     * @param total 总字节数（可选，如果之前未知现在已知）
+     */
+    fun updateCachingProgress(url: String, transferred: Long, total: Long? = null) {
+        val cacheKey = getCacheKey(url)
+        val task = cachingTasks[cacheKey] ?: return
+
+        synchronized(cacheLock) {
+            task.transferredSize = transferred
+            if (total != null) {
+                // 更新总大小（如果之前未知）
+                val updatedTask = task.copy(totalSize = total)
+                cachingTasks[cacheKey] = updatedTask
+            }
+        }
+    }
+
+    /**
+     * 完成缓存
+     * @param url 文件URL
+     * @param file 缓存文件
+     * @param size 文件大小
+     */
+    fun finishCaching(url: String, file: File, size: Long) {
+        val cacheKey = getCacheKey(url)
+        cachingTasks.remove(cacheKey)
+        registerCachedFile(url, file, size)
+        Log.d("MusicCacheManager", "Finished caching: $url, size: $size")
+    }
+
+    /**
+     * 缓存失败
+     * @param url 文件URL
+     */
+    fun failCaching(url: String) {
+        val cacheKey = getCacheKey(url)
+        cachingTasks.remove(cacheKey)
+        Log.d("MusicCacheManager", "Failed caching: $url")
+    }
+
+    /**
+     * 获取所有正在缓存的任务信息
+     */
+    fun getCachingTasks(): List<CachingTaskInfo> {
+        synchronized(cacheLock) {
+            return cachingTasks.values.map { task ->
+                val progressPercentage = if (task.totalSize != null && task.totalSize > 0) {
+                    (task.transferredSize.toFloat() / task.totalSize) * 100f
+                } else {
+                    0f
+                }
+                CachingTaskInfo(
+                    url = task.url,
+                    fileName = task.fileName,
+                    totalSize = task.totalSize,
+                    transferredSize = task.transferredSize,
+                    startTime = task.startTime,
+                    status = task.status,
+                    progressPercentage = progressPercentage
+                )
+            }
+        }
+    }
+
+    /**
+     * 获取待缓存文件的总大小（所有正在缓存任务的总大小）
+     */
+    fun getPendingCacheTotalSize(): Long {
+        synchronized(cacheLock) {
+            return cachingTasks.values.sumOf { it.totalSize ?: 0L }
+        }
+    }
+
+    /**
+     * 从URL提取文件名
+     */
+    private fun extractFileNameFromUrl(url: String): String {
+        return try {
+            var name = url.substringAfterLast('/').takeIf { it.isNotEmpty() }
+            if (name == null || name.contains('?')) {
+                name = name?.substringBefore('?') ?: url.substringAfterLast('=').takeIf { it.isNotEmpty() }
+            }
+            if (name != null && name.isNotEmpty()) {
+                name = name.replace(Regex("\\?.*$"), "")
+                name.trim()
+            } else {
+                "缓存文件_${getCacheKey(url).take(8)}"
+            }
+        } catch (e: Exception) {
+            "缓存文件_${getCacheKey(url).take(8)}"
+        }
+    }
 
     fun formatFileSize(bytes: Long): String {
         val kb = bytes / 1024.0
