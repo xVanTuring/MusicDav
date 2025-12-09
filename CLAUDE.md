@@ -65,11 +65,6 @@ MusicDav is an Android WebDAV music player application built with Jetpack Compos
    - `SimpleMusicService`: Background music service using Android Media3
    - `BottomPlayerBar`: Mini player component for navigation
 
-6. **Cache System** (`com.spotify.music.cache`):
-   - `MusicCacheManager`: Manages disk cache for music files with LRU eviction policy (500MB max)
-   - `CachedHttpDataSource`: HttpDataSource implementation with transparent streaming cache
-   - `CacheManagementScreen`: UI for managing cache statistics and clearing cached files
-
 ### Key Patterns
 
 - **State Management**: Uses Jetpack Compose state with `mutableStateOf` and `remember`
@@ -98,11 +93,8 @@ app/src/main/java/com/spotify/music/
 │   ├── BottomPlayerBar.kt          # Mini player component
 │   ├── AlbumDetailScreen.kt          # Music list display
 │   └── screen/                     # Main app screens
-├── webdav/
-│   └── WebDavClient.kt             # WebDAV operations
-└── cache/                          # Music caching system
-    ├── MusicCacheManager.kt        # Cache manager with LRU policy
-    └── CachedHttpDataSource.kt     # Streaming cache data source
+└── webdav/
+    └── WebDavClient.kt             # WebDAV operations
 ```
 
 ## Development Notes
@@ -117,19 +109,10 @@ app/src/main/java/com/spotify/music/
 - Instrumented tests for Android components and UI interactions
 - Mock WebDAV server recommended for integration testing
 
-### Cache Strategy
-- **Disk cache**: 500MB maximum with LRU eviction policy for music files
-- **Transparent caching**: `CachedHttpDataSource` automatically caches files during playback
-- **Streaming cache**: Files are cached while streaming, not requiring full download first
-- **Cache management**: UI interface to view cache statistics and clear cached files
-- **Metadata persistence**: Cache metadata saved in JSON format, survives app restarts
-- **Integration**: Seamlessly integrated with ExoPlayer via custom HttpDataSource
-
 ### Performance Considerations
 - Music file listings are cached to reduce network requests
 - Cover images are loaded asynchronously and cached as Base64
-- ExoPlayer handles audio caching automatically
-- Custom disk cache system (MusicCacheManager) provides transparent caching with LRU eviction policy
+- ExoPlayer handles audio buffering and playback optimization
 
 
 ### How to display image from webdav properly
