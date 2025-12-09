@@ -14,8 +14,6 @@ import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.common.Player
-import com.spotify.music.cache.CachedHttpDataSource
-import com.spotify.music.cache.MusicCacheManager
 import com.spotify.music.data.PlayMode
 import okhttp3.Credentials
 
@@ -24,7 +22,6 @@ class SimpleMusicService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var player: ExoPlayer? = null
     private var httpDataSourceFactory: DefaultHttpDataSource.Factory? = null
-    private var cacheManager: MusicCacheManager? = null
 
     // Store auth credentials for WebDAV
     private var webDavUsername: String? = null
@@ -62,9 +59,6 @@ class SimpleMusicService : MediaSessionService() {
         instance = this
         val context = this
 
-        // Initialize cache manager
-        cacheManager = MusicCacheManager.getInstance(context)
-
         // Get credentials from static storage
         webDavUsername = staticUsername
         webDavPassword = staticPassword
@@ -76,13 +70,8 @@ class SimpleMusicService : MediaSessionService() {
         // Apply auth headers if credentials are available
         updateAuthHeaders()
 
-        // Create cached data source factory
-        val cachedDataSourceFactory = cacheManager?.let { cache ->
-            CachedHttpDataSource.Factory(httpDataSourceFactory!!, cache)
-        } ?: httpDataSourceFactory
-
         player = ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(cachedDataSourceFactory as DataSource.Factory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(httpDataSourceFactory!!))
             .build()
 
         // 设置播放模式监听器
@@ -154,14 +143,9 @@ class SimpleMusicService : MediaSessionService() {
             // Release old player
             existingPlayer.release()
             
-            // Create cached data source factory
-            val cachedDataSourceFactory = cacheManager?.let { cache ->
-                CachedHttpDataSource.Factory(httpDataSourceFactory!!, cache)
-            } ?: httpDataSourceFactory
-
             // Create new player with updated credentials
             val newPlayer = ExoPlayer.Builder(this)
-                .setMediaSourceFactory(DefaultMediaSourceFactory(cachedDataSourceFactory as DataSource.Factory))
+                .setMediaSourceFactory(DefaultMediaSourceFactory(httpDataSourceFactory!!))
                 .build()
                 .apply {
                     if (mediaItems.isNotEmpty()) {

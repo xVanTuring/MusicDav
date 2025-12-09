@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -68,7 +67,6 @@ fun AlbumListScreen(
     onCreate: (Album, String?) -> Unit,
     onDelete: (Album) -> Unit,
     onAddButtonClick: (() -> Unit)? = null,
-    onCacheManagement: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -102,14 +100,6 @@ fun AlbumListScreen(
                 TopAppBar(
                     title = { Text("Albums") },
                     actions = {
-                        if (onCacheManagement != null) {
-                            IconButton(onClick = onCacheManagement) {
-                                Icon(
-                                    imageVector = Icons.Default.Storage,
-                                    contentDescription = "Cache Management"
-                                )
-                            }
-                        }
                         IconButton(onClick = {
                             onAddButtonClick?.invoke() ?: run { creating = true }
                         }) {

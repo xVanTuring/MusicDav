@@ -20,7 +20,6 @@ import com.spotify.music.ui.screen.AlbumDetailScreen
 import com.spotify.music.ui.screen.ServerConfigListScreen
 import com.spotify.music.ui.screen.ServerConfigCreateScreen
 import com.spotify.music.ui.screen.AlbumCreateForm
-import com.spotify.music.ui.screen.CacheManagementScreen
 import com.spotify.music.ui.theme.MusicDavTheme
 import com.spotify.music.ui.BottomPlayerBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,7 +27,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Column
@@ -99,7 +98,6 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     var albums by remember { mutableStateOf(com.spotify.music.data.AlbumsRepository.load(context)) }
     var selectedAlbum by remember { mutableStateOf<com.spotify.music.data.Album?>(null) }
     var editingAlbum by remember { mutableStateOf<com.spotify.music.data.Album?>(null) }
-    var showCacheManagement by remember { mutableStateOf(false) }
     val playlistController = rememberPlaylistStateController()
 
     // 处理通知权限
@@ -119,12 +117,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
         }
     }
 
-    if (showCacheManagement) {
-        // Show cache management screen
-        CacheManagementScreen(
-            onBackClick = { showCacheManagement = false }
-        )
-    } else if (editingAlbum != null) {
+    if (editingAlbum != null) {
         // Show edit form
         AlbumCreateForm(
             onCancel = { editingAlbum = null },
@@ -180,7 +173,6 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                 albums = updated
                 com.spotify.music.data.AlbumsRepository.save(context, updated)
             },
-            onCacheManagement = { showCacheManagement = true },
             playlistController = playlistController,
             modifier = modifier
         )
@@ -202,7 +194,6 @@ fun MainTabScreen(
     onSelectAlbum: (com.spotify.music.data.Album) -> Unit,
     onCreateAlbum: (com.spotify.music.data.Album, String?) -> Unit,
     onDeleteAlbum: (com.spotify.music.data.Album) -> Unit,
-    onCacheManagement: () -> Unit = {},
     playlistController: com.spotify.music.player.PlaylistStateController,
     modifier: Modifier = Modifier
 ) {
@@ -311,7 +302,7 @@ fun MainTabScreen(
                         onClick = { selectedTabIndex = 1 },
                         icon = {
                             Icon(
-                                imageVector = Icons.Default.Storage,
+                                imageVector = Icons.Default.Settings,
                                 contentDescription = "Server Configs"
                             )
                         },
@@ -340,7 +331,6 @@ fun MainTabScreen(
                         },
                         onDelete = onDeleteAlbum,
                         onAddButtonClick = { creatingAlbum = true },
-                        onCacheManagement = onCacheManagement,
                         modifier = Modifier.fillMaxSize()
                     )
                 }

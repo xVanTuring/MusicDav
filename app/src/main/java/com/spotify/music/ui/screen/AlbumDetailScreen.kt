@@ -25,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
-import com.spotify.music.cache.MusicCacheManager
 import com.spotify.music.data.Album
 import com.spotify.music.data.ServerConfigRepository
 import com.spotify.music.player.PlaylistStateController
@@ -44,7 +43,6 @@ fun AlbumDetailScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val cacheManager = remember { MusicCacheManager.getInstance(context) }
 
     // 存储当前专辑的歌曲列表
     var currentAlbumSongs by remember { mutableStateOf<List<com.spotify.music.data.MusicFile>>(emptyList()) }
@@ -205,8 +203,7 @@ fun AlbumDetailScreen(
             },
             modifier = modifier.padding(paddingValues),
             showTopBar = false, // Hide MusicListScreen's top bar
-            externalRefreshTrigger = { refreshTrigger }, // Pass refresh trigger value
-            cacheManager = cacheManager // Pass cache manager
+            externalRefreshTrigger = { refreshTrigger } // Pass refresh trigger value
         )
     }
 }

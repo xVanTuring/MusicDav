@@ -35,7 +35,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.DownloadDone
-import com.spotify.music.cache.MusicCacheManager
 import com.spotify.music.data.MusicFile
 import com.spotify.music.data.WebDavConfig
 import com.spotify.music.webdav.WebDavClient
@@ -54,8 +53,7 @@ fun MusicListScreen(
     bottomBar: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     showTopBar: Boolean = true,
-    externalRefreshTrigger: (() -> Unit)? = null,
-    cacheManager: MusicCacheManager? = null
+    externalRefreshTrigger: (() -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var musicFiles by remember { mutableStateOf<List<MusicFile>>(emptyList()) }
@@ -220,8 +218,7 @@ fun MusicListScreen(
                 errorMessage = errorMessage,
                 musicFiles = musicFiles,
                 currentPlayingSong = currentPlayingSong,
-                onSongSelected = onSongSelected,
-                cacheManager = cacheManager
+                onSongSelected = onSongSelected
             )
         }
     } else {
@@ -235,8 +232,7 @@ fun MusicListScreen(
                 errorMessage = errorMessage,
                 musicFiles = musicFiles,
                 currentPlayingSong = currentPlayingSong,
-                onSongSelected = onSongSelected,
-                cacheManager = cacheManager
+                onSongSelected = onSongSelected
             )
         }
     }
@@ -249,8 +245,7 @@ private fun Content(
     errorMessage: String?,
     musicFiles: List<MusicFile>,
     currentPlayingSong: MusicFile?,
-    onSongSelected: (Int, MusicFile) -> Unit,
-    cacheManager: MusicCacheManager?
+    onSongSelected: (Int, MusicFile) -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -274,7 +269,6 @@ private fun Content(
                         MusicListItem(
                             musicFile = musicFile,
                             isPlaying = currentPlayingSong != null && musicFile.url == currentPlayingSong.url,
-                            isCached = cacheManager?.getCachedFile(musicFile.url) != null,
                             onClick = { onSongSelected(index, musicFile) }
                         )
                     }
@@ -317,7 +311,6 @@ private fun Content(
 fun MusicListItem(
     musicFile: MusicFile,
     isPlaying: Boolean,
-    isCached: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -344,18 +337,6 @@ fun MusicListItem(
                 else
                     MaterialTheme.colorScheme.onSurfaceVariant
             )
-        },
-        trailingContent = if (isCached) {
-            {
-                Icon(
-                    imageVector = Icons.Default.DownloadDone,
-                    contentDescription = "Cached",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        } else {
-            null
         },
         colors = ListItemDefaults.colors(
             containerColor = if (isPlaying)
