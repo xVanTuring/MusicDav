@@ -34,7 +34,7 @@ enum class PlayMode {
     REPEAT_ALL       // 列表循环
 }
 
-data class PlaylistState(
+ data class PlaylistState(
     val songs: List<MusicFile> = emptyList(),
     val currentIndex: Int = -1,
     val isPlaying: Boolean = false,
@@ -51,27 +51,45 @@ data class PlaylistState(
     // 当前播放专辑的WebDAV配置（用于加载封面图片）
     val currentWebDavConfig: WebDavConfig? = null,
     // 播放模式
-    val playMode: PlayMode = PlayMode.PLAY_ONCE
+    val playMode: PlayMode = PlayMode.PLAY_ONCE,
+    // 缓存的内嵌封面（文件 URL → 本地缓存路径）
+    val cachedCoverMap: Map<String, String> = emptyMap()
 ) {
     val currentSong: MusicFile?
         get() = songs.getOrNull(currentIndex)
 
-    // 获取当前歌曲的封面URL，优先级：内置封面 > 专辑封面
+    // 获取当前歌曲的封面URL，优先级：缓存封面 > 内嵌封面 > 专辑封面
     // 如果正在加载元数据，返回null以显示占位符
     val currentCoverUrl: String?
         get() {
-            if (isLoadingMetadata) {
-                return null // 加载期间显示占位符
+            val currentSong = currentSong ?: return null
+
+            // 优先级 1: 缓存的本地封面文件（即使在加载元数据时也可以使用）
+            cachedCoverMap[currentSong.url]?.let {
+                android.util.Log.d("PlaylistState", "使用缓存封面: ${currentSong.name}")
+                return it
             }
 
-            // 加载完成后，优先显示内嵌封面，否则显示专辑封面
-            val embedded = currentEmbeddedCoverUrl
-            val album = currentSong?.let { song -> songToAlbumCoverMap[song.url] }
-            val result = embedded ?: album
+            // 如果正在加载元数据且没有缓存，返回null
+            if (isLoadingMetadata) {
+                android.util.Log.d("PlaylistState", "正在加载元数据且无缓存，返回null: ${currentSong.name}")
+                return null
+            }
 
-            // 调试：记录最终决定的封面
+            // 优先级 2: 当前播放器提取的内嵌封面
+            currentEmbeddedCoverUrl?.let {
+                android.util.Log.d("PlaylistState", "使用内嵌封面: ${currentSong.name}")
+                return it
+            }
 
-            return result
+            // 优先级 3: 专辑封面
+            songToAlbumCoverMap[currentSong.url]?.let {
+                android.util.Log.d("PlaylistState", "使用专辑封面: ${currentSong.name}")
+                return it
+            }
+
+            android.util.Log.d("PlaylistState", "无封面可用: ${currentSong.name}")
+            return null
         }
 
     val hasNext: Boolean

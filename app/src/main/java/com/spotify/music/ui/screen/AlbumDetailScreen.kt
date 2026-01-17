@@ -170,16 +170,15 @@ fun AlbumDetailScreen(
                 // 存储当前专辑的歌曲列表，但不自动加载到播放器
                 currentAlbumSongs = songs
             },
-            onSongSelected = { index, _ ->
-                coroutineScope.launch {
-                    // 加载当前专辑的歌曲列表到播放器，然后播放选中的歌曲
-                    playlistController.loadPlaylist(currentAlbumSongs)
-                    // 在播放前设置当前专辑的封面映射和WebDAV配置
-                    playlistController.setSongAlbumCovers(currentAlbumSongs, album.coverImageUrl)
-                    playlistController.setCurrentWebDavConfig(webDavConfig)
-                    playlistController.setPlaylistAndPlay(index)
-                }
-            },
+             onSongSelected = { index, _ ->
+                 coroutineScope.launch {
+                     playlistController.loadPlaylist(currentAlbumSongs)
+                     playlistController.setSongAlbumCovers(currentAlbumSongs, album.coverImageUrl)
+                     playlistController.setCurrentWebDavConfig(webDavConfig)
+                     playlistController.loadCachedCovers(context, currentAlbumSongs)
+                     playlistController.setPlaylistAndPlay(index)
+                 }
+             },
             bottomBar = {
                 BottomPlayerBar(
                     playlistState = playlistController.state,

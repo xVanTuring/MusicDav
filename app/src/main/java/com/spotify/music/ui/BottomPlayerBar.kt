@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import coil3.compose.AsyncImage
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
+import coil3.request.crossfade
 import com.spotify.music.data.PlaylistState
 import com.spotify.music.data.PlayMode
 import com.spotify.music.data.WebDavConfig
@@ -109,40 +110,69 @@ fun BottomPlayerBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Album cover
-                    if (playlistState.currentCoverUrl != null) {
-                        val coverUrl = playlistState.currentCoverUrl!!
+                 // Album cover
+                     if (playlistState.currentCoverUrl != null) {
+                         val coverUrl = playlistState.currentCoverUrl!!
 
-                        if (playlistState.currentWebDavConfig != null &&
-                            playlistState.currentWebDavConfig.username.isNotBlank() &&
-                            playlistState.currentWebDavConfig.password.isNotBlank() &&
-                            coverUrl.startsWith("http")) {
-                            // WebDAV URL with authentication
-                            val headers = NetworkHeaders.Builder()
-                                .set("Authorization", Credentials.basic(playlistState.currentWebDavConfig.username, playlistState.currentWebDavConfig.password))
-                                .build()
+                         when {
+                             coverUrl.startsWith("/") || coverUrl.startsWith("file://") -> {
+                                 AsyncImage(
+                                     model = coil3.request.ImageRequest.Builder(LocalContext.current)
+                                         .data(coverUrl)
+                                         .crossfade(true)
+                                         .build(),
+                                     contentDescription = "Album Cover",
+                                     modifier = Modifier
+                                         .size(48.dp)
+                                         .clip(RoundedCornerShape(8.dp))
+                                 )
+                             }
+                             coverUrl.startsWith("data:") -> {
+                                 AsyncImage(
+                                     model = coil3.request.ImageRequest.Builder(LocalContext.current)
+                                         .data(coverUrl)
+                                         .crossfade(true)
+                                         .build(),
+                                     contentDescription = "Album Cover",
+                                     modifier = Modifier
+                                         .size(48.dp)
+                                         .clip(RoundedCornerShape(8.dp))
+                                 )
+                             }
+                             coverUrl.startsWith("http") -> {
+                                 if (playlistState.currentWebDavConfig != null &&
+                                     playlistState.currentWebDavConfig.username.isNotBlank() &&
+                                     playlistState.currentWebDavConfig.password.isNotBlank()) {
+                                     val headers = NetworkHeaders.Builder()
+                                         .set("Authorization", Credentials.basic(playlistState.currentWebDavConfig.username, playlistState.currentWebDavConfig.password))
+                                         .build()
 
-                            AsyncImage(
-                                model = coil3.request.ImageRequest.Builder(LocalContext.current)
-                                    .data(coverUrl)
-                                    .httpHeaders(headers)
-                                    .build(),
-                                contentDescription = "Album Cover",
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                            )
-                        } else {
-                            // Local file or no authentication needed
-                            AsyncImage(
-                                model = coverUrl,
-                                contentDescription = "Album Cover",
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                            )
-                        }
-                    } else {
+                                     AsyncImage(
+                                         model = coil3.request.ImageRequest.Builder(LocalContext.current)
+                                             .data(coverUrl)
+                                             .httpHeaders(headers)
+                                             .crossfade(true)
+                                             .build(),
+                                         contentDescription = "Album Cover",
+                                         modifier = Modifier
+                                             .size(48.dp)
+                                             .clip(RoundedCornerShape(8.dp))
+                                     )
+                                 } else {
+                                     AsyncImage(
+                                         model = coil3.request.ImageRequest.Builder(LocalContext.current)
+                                             .data(coverUrl)
+                                             .crossfade(true)
+                                             .build(),
+                                         contentDescription = "Album Cover",
+                                         modifier = Modifier
+                                             .size(48.dp)
+                                             .clip(RoundedCornerShape(8.dp))
+                                     )
+                                 }
+                             }
+                         }
+                     } else {
                         // Default music note icon when no cover
                         Box(
                             modifier = Modifier

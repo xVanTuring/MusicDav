@@ -30,20 +30,21 @@ import kotlinx.coroutines.Job
 import java.util.concurrent.atomic.AtomicReference
 import androidx.compose.ui.platform.LocalContext
 
-class PlaylistStateController {
-    private val _state = androidx.compose.runtime.mutableStateOf(PlaylistState())
-    val state: PlaylistState
-        get() = _state.value
+ class PlaylistStateController {
+     private val _state = androidx.compose.runtime.mutableStateOf(PlaylistState())
+     val state: PlaylistState
+         get() = _state.value
 
-    private var controller: MediaController? = null
-    private val listenerRef = AtomicReference<Player.Listener>()
-    private var isControllerReady = false
-    private var lastCredentials: Pair<String, String>? = null
-    private var metadataLoadTimeoutJob: Job? = null
+     private var controller: MediaController? = null
+     private val listenerRef = AtomicReference<Player.Listener>()
+     private var isControllerReady = false
+     private var lastCredentials: Pair<String, String>? = null
+     private var metadataLoadTimeoutJob: Job? = null
+     private var context: android.content.Context? = null
 
-    init {
-        _state.value = PlaylistState()
-    }
+     init {
+         _state.value = PlaylistState()
+     }
 
     fun setCredentials(webDavConfig: WebDavConfig) {
         val credentials = Pair(webDavConfig.username, webDavConfig.password)
@@ -79,13 +80,14 @@ class PlaylistStateController {
         _state.value = _state.value.copy(currentWebDavConfig = webDavConfig)
     }
 
-    suspend fun initialize(context: android.content.Context) {
-        val sessionToken = SessionToken(
-            context,
-            ComponentName(context, SimpleMusicService::class.java)
-        )
-        val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
-        val mainExecutor = ContextCompat.getMainExecutor(context)
+     suspend fun initialize(context: android.content.Context) {
+         this.context = context
+         val sessionToken = SessionToken(
+             context,
+             ComponentName(context, SimpleMusicService::class.java)
+         )
+         val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+         val mainExecutor = ContextCompat.getMainExecutor(context)
 
         controllerFuture.addListener({
             try {
@@ -109,44 +111,43 @@ class PlaylistStateController {
                         Log.e("PlaylistStateController", "Player error: ${error.message}")
                     }
 
-                    override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
-                        // 检查是否有内置封面
-                        val artworkUri = mediaMetadata.artworkUri
-                        val artworkData = mediaMetadata.artworkData
-                        val currentSong = _state.value.currentSong
+                     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
+                         val artworkUri = mediaMetadata.artworkUri
+                         val artworkData = mediaMetadata.artworkData
+                         val currentSong = _state.value.currentSong
 
-                        if (currentSong != null) {
-                            // 优先使用 artworkUri，如果为null则尝试使用 artworkData
-                            if (artworkUri != null) {
-                                // 更新当前歌曲的内置封面
-                                Log.d("PlaylistStateController", "内嵌封面加载完成: artworkUri=${artworkUri}")
-                                // 取消超时任务
-                                metadataLoadTimeoutJob?.cancel()
-                                _state.value = _state.value.copy(
-                                    currentEmbeddedCoverUrl = artworkUri.toString(),
-                                    isLoadingMetadata = false // 元数据加载完成
-                                )
-                            } else if (artworkData != null && artworkData.isNotEmpty()) {
-                                // 将 artworkData 转换为 Base64 URL
-                                val base64Cover = android.util.Base64.encodeToString(artworkData, android.util.Base64.NO_WRAP)
-                                val mimeType = when (mediaMetadata.artworkDataType) {
-                                    MediaMetadata.PICTURE_TYPE_FRONT_COVER -> "image/jpeg"
-                                    else -> "image/jpeg"
-                                }
-                                Log.d("PlaylistStateController", "内嵌封面加载完成: artworkData size=${artworkData.size}, type=$mimeType")
-                                // 取消超时任务
-                                metadataLoadTimeoutJob?.cancel()
-                                _state.value = _state.value.copy(
-                                    currentEmbeddedCoverUrl = "data:$mimeType;base64,$base64Cover",
-                                    isLoadingMetadata = false // 元数据加载完成
-                                )
-                            } else {
-                                // 元数据变化但没有封面数据，此时不设置 isLoadingMetadata = false
-                                // 等待后续可能有的封面数据，或者超时后再显示专辑封面
-                                Log.d("PlaylistStateController", "元数据变化但无封面数据，继续等待")
-                            }
-                        }
-                    }
+                         if (currentSong != null) {
+                              if (artworkUri != null) {
+                                  Log.d("PlaylistStateController", "内嵌封面加载完成: artworkUri=${artworkUri}")
+                                  metadataLoadTimeoutJob?.cancel()
+                                  _state.value = _state.value.copy(
+                                      currentEmbeddedCoverUrl = artworkUri.toString(),
+                                      isLoadingMetadata = false,
+                                      cachedCoverMap = _state.value.cachedCoverMap
+                                  )
+                              } else if (artworkData != null && artworkData.isNotEmpty()) {
+                                  val base64Cover = android.util.Base64.encodeToString(artworkData, android.util.Base64.NO_WRAP)
+                                  val mimeType = "image/jpeg"
+                                  Log.d("PlaylistStateController", "内嵌封面加载完成: artworkData size=${artworkData.size}, type=$mimeType")
+
+                                  metadataLoadTimeoutJob?.cancel()
+
+                                  _state.value = _state.value.copy(
+                                      currentEmbeddedCoverUrl = "data:$mimeType;base64,$base64Cover",
+                                      isLoadingMetadata = false,
+                                      cachedCoverMap = _state.value.cachedCoverMap
+                                  )
+
+                                  context?.let { ctx ->
+                                      kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                                          CoverCache.saveCover(ctx, currentSong.url, artworkData)
+                                      }
+                                  }
+                              } else {
+                                  Log.d("PlaylistStateController", "元数据变化但无封面数据，继续等待")
+                              }
+                         }
+                     }
 
                     override fun onEvents(player: Player, events: Player.Events) {
                         if (events.contains(Player.EVENT_TIMELINE_CHANGED) ||
@@ -156,17 +157,17 @@ class PlaylistStateController {
                             // 只在MediaController的索引与当前状态不同时更新
                             // 这样可以避免覆盖用户点击时的即时状态更新
                             if (_state.value.currentIndex != currentIndex) {
-                                Log.d("PlaylistStateController", "自动切换歌曲: 设置加载状态 isLoadingMetadata=true, 重置封面")
-                                _state.value = _state.value.copy(
-                                    duration = duration,
-                                    currentIndex = currentIndex,
-                                    currentEmbeddedCoverUrl = null, // 重置内置封面
-                                    isLoadingMetadata = true // 开始加载元数据
-                                )
-                            } else {
-                                // 只更新duration，保持currentIndex不变
-                                _state.value = _state.value.copy(duration = duration)
-                            }
+                                 Log.d("PlaylistStateController", "自动切换歌曲: 设置加载状态 isLoadingMetadata=true, 重置封面")
+                                 _state.value = _state.value.copy(
+                                     duration = duration,
+                                     currentIndex = currentIndex,
+                                     currentEmbeddedCoverUrl = null,
+                                     isLoadingMetadata = true,
+                                     cachedCoverMap = _state.value.cachedCoverMap // 保留缓存映射
+                                 )
+                             } else {
+                                 _state.value = _state.value.copy(duration = duration)
+                             }
                         }
                     }
                 }
@@ -250,8 +251,9 @@ class PlaylistStateController {
         _state.value = _state.value.copy(
             currentIndex = index,
             isPlaying = true,
-            currentEmbeddedCoverUrl = null, // 重置内置封面，等待MediaMetadata更新
-            isLoadingMetadata = true // 开始加载元数据
+            currentEmbeddedCoverUrl = null,
+            isLoadingMetadata = true,
+            cachedCoverMap = _state.value.cachedCoverMap // 保留缓存映射
         )
 
         // 设置超时任务：如果3秒内没有内嵌封面，则显示专辑封面
@@ -427,14 +429,26 @@ class PlaylistStateController {
         }
     }
 
-    fun release() {
-        listenerRef.get()?.let { controller?.removeListener(it) }
-        controller?.release()
-        controller = null
-        isControllerReady = false
-        lastCredentials = null
-    }
-}
+     fun release() {
+         listenerRef.get()?.let { controller?.removeListener(it) }
+         controller?.release()
+         controller = null
+         isControllerReady = false
+         lastCredentials = null
+     }
+
+     suspend fun loadCachedCovers(context: android.content.Context, songs: List<MusicFile>) {
+         val cachedCovers = mutableMapOf<String, String>()
+         for (song in songs) {
+             CoverCache.getCoverPath(context, song.url)?.let { path ->
+                 cachedCovers[song.url] = path
+                 Log.d("PlaylistStateController", "Cached cover found for: ${song.name} -> $path")
+             }
+         }
+         Log.d("PlaylistStateController", "Loaded ${cachedCovers.size} cached covers")
+         _state.value = _state.value.copy(cachedCoverMap = cachedCovers)
+     }
+ }
 
 @Composable
 fun rememberPlaylistStateController(): PlaylistStateController {
