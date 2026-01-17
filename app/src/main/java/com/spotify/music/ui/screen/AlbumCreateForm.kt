@@ -133,6 +133,18 @@ fun AlbumCreateForm(
         }
     }
 
+    // Initialize with default server config for new album
+    LaunchedEffect(Unit) {
+        if (editingAlbum == null && serverConfigs.isNotEmpty()) {
+            useExistingConfig = true
+            selectedServerConfigId = serverConfigs.first().id
+            val config = serverConfigs.first()
+            url = config.url
+            username = config.username
+            password = config.password
+        }
+    }
+
     // Helper function to get current WebDAV configuration
     fun getCurrentWebDavConfig(): com.spotify.music.data.WebDavConfig {
         val currentUrl = if (useExistingConfig && selectedServerConfigId != null) {
