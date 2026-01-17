@@ -35,10 +35,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.MoreVert
 import com.spotify.music.data.MusicFile
 import com.spotify.music.data.WebDavConfig
 import com.spotify.music.webdav.WebDavClient
+import com.spotify.music.player.MusicCache
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,7 +59,9 @@ fun MusicListScreen(
     bottomBar: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     showTopBar: Boolean = true,
-    externalRefreshTrigger: (() -> Unit)? = null
+    externalRefreshTrigger: (() -> Unit)? = null,
+    enableCache: Boolean = false,
+    onCacheRequest: (MusicFile) -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var musicFiles by remember { mutableStateOf<List<MusicFile>>(emptyList()) }
@@ -218,7 +226,10 @@ fun MusicListScreen(
                 errorMessage = errorMessage,
                 musicFiles = musicFiles,
                 currentPlayingSong = currentPlayingSong,
-                onSongSelected = onSongSelected
+                onSongSelected = onSongSelected,
+                enableCache = enableCache,
+                onCacheRequest = onCacheRequest,
+                context = context
             )
         }
     } else {
@@ -232,7 +243,10 @@ fun MusicListScreen(
                 errorMessage = errorMessage,
                 musicFiles = musicFiles,
                 currentPlayingSong = currentPlayingSong,
-                onSongSelected = onSongSelected
+                onSongSelected = onSongSelected,
+                enableCache = enableCache,
+                onCacheRequest = onCacheRequest,
+                context = context
             )
         }
     }
@@ -245,7 +259,10 @@ private fun Content(
     errorMessage: String?,
     musicFiles: List<MusicFile>,
     currentPlayingSong: MusicFile?,
-    onSongSelected: (Int, MusicFile) -> Unit
+    onSongSelected: (Int, MusicFile) -> Unit,
+    enableCache: Boolean,
+    onCacheRequest: (MusicFile) -> Unit,
+    context: android.content.Context
 ) {
     Box(
         modifier = Modifier
@@ -269,7 +286,10 @@ private fun Content(
                         MusicListItem(
                             musicFile = musicFile,
                             isPlaying = currentPlayingSong != null && musicFile.url == currentPlayingSong.url,
-                            onClick = { onSongSelected(index, musicFile) }
+                            onClick = { onSongSelected(index, musicFile) },
+                            enableCache = enableCache,
+                            onCacheRequest = onCacheRequest,
+                            context = context
                         )
                     }
                 }
@@ -312,8 +332,21 @@ fun MusicListItem(
     musicFile: MusicFile,
     isPlaying: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enableCache: Boolean = false,
+    onCacheRequest: (MusicFile) -> Unit = {},
+    context: android.content.Context? = null
 ) {
+    val isCached = remember { mutableStateOf(false) }
+
+    LaunchedEffect(musicFile.url) {
+        if (enableCache && context != null) {
+            isCached.value = withContext(Dispatchers.IO) {
+                MusicCache.isCached(context, musicFile.url)
+            }
+        }
+    }
+
     ListItem(
         headlineContent = {
             Text(
@@ -337,6 +370,48 @@ fun MusicListItem(
                 else
                     MaterialTheme.colorScheme.onSurfaceVariant
             )
+        },
+        trailingContent = if (enableCache && context != null) {
+            {
+                var isCaching by remember { mutableStateOf(false) }
+                val scope = rememberCoroutineScope()
+
+                IconButton(
+                    onClick = {
+                        if (!isCaching) {
+                            isCaching = true
+                            onCacheRequest(musicFile)
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    isCached.value = MusicCache.isCached(context, musicFile.url)
+                                }
+                                isCaching = false
+                            }
+                        }
+                    },
+                    enabled = !isCaching
+                ) {
+                    if (isCaching) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else if (isCached.value) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Cached",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = "Cache"
+                        )
+                    }
+                }
+            }
+        } else {
+            null
         },
         colors = ListItemDefaults.colors(
             containerColor = if (isPlaying)

@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -24,10 +25,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
 import android.widget.Toast
 import com.spotify.music.data.Album
 import com.spotify.music.data.ServerConfigRepository
 import com.spotify.music.player.PlaylistStateController
+import com.spotify.music.player.CacheManager
+import com.spotify.music.player.MusicCache
 import com.spotify.music.ui.BottomPlayerBar
 import com.spotify.music.ui.MusicListScreen
 import kotlinx.coroutines.launch
@@ -48,6 +52,11 @@ fun AlbumDetailScreen(
     var currentAlbumSongs by remember { mutableStateOf<List<com.spotify.music.data.MusicFile>>(emptyList()) }
     var refreshTrigger by remember { mutableStateOf(0) }
     var hasTriedInitialRefresh by remember { mutableStateOf(false) }
+
+    // 缓存状态
+    val cacheManager = remember { CacheManager() }
+    var isCachingAlbum by remember { mutableStateOf(false) }
+    var cachingProgress by remember { mutableStateOf("") }
 
     // 拦截返回键，返回到专辑列表页面
     BackHandler {
@@ -150,6 +159,51 @@ fun AlbumDetailScreen(
                             contentDescription = "Refresh"
                         )
                     }
+                    IconButton(
+                        onClick = {
+                            if (currentAlbumSongs.isNotEmpty() && !isCachingAlbum) {
+                                isCachingAlbum = true
+                                cacheManager.cacheAlbum(
+                                    scope = coroutineScope,
+                                    context = context,
+                                    musicFiles = currentAlbumSongs,
+                                    config = webDavConfig,
+                                    onSuccess = { paths ->
+                                        Toast.makeText(
+                                            context,
+                                            "Cached ${paths.count()} songs",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        isCachingAlbum = false
+                                        cachingProgress = ""
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            context,
+                                            "Failed to cache album: ${error.message}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        isCachingAlbum = false
+                                        cachingProgress = ""
+                                    }
+                                )
+                            }
+                        },
+                        enabled = currentAlbumSongs.isNotEmpty() && !isCachingAlbum
+                    ) {
+                        if (isCachingAlbum) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier
+                                    .size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Cache Album"
+                            )
+                        }
+                    }
                     IconButton(onClick = { onEdit(album) }) {
                         Icon(
                             imageVector = Icons.Default.Edit,
@@ -169,6 +223,29 @@ fun AlbumDetailScreen(
             onPlaylistLoaded = { songs ->
                 // 存储当前专辑的歌曲列表，但不自动加载到播放器
                 currentAlbumSongs = songs
+            },
+            enableCache = true,
+            onCacheRequest = { musicFile ->
+                cacheManager.cacheSong(
+                    scope = coroutineScope,
+                    context = context,
+                    musicFile = musicFile,
+                    config = webDavConfig,
+                    onSuccess = { path ->
+                        Toast.makeText(
+                            context,
+                            "Cached: ${musicFile.name}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    onFailure = { error ->
+                        Toast.makeText(
+                            context,
+                            "Failed to cache: ${error.message}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                )
             },
              onSongSelected = { index, _ ->
                  coroutineScope.launch {

@@ -27,6 +27,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicReference
 import androidx.compose.ui.platform.LocalContext
 
@@ -306,6 +307,17 @@ import androidx.compose.ui.platform.LocalContext
             if (index >= 0 && index < state.songs.size) {
                 currentController.seekToDefaultPosition(index)
                 currentController.play()
+
+                // Cache the current song in background
+                context?.let { ctx ->
+                    CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                        state.currentSong?.let { song ->
+                            if (state.currentWebDavConfig != null) {
+                                cacheCurrentSong(state.currentWebDavConfig!!)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -438,16 +450,59 @@ import androidx.compose.ui.platform.LocalContext
      }
 
      suspend fun loadCachedCovers(context: android.content.Context, songs: List<MusicFile>) {
-         val cachedCovers = mutableMapOf<String, String>()
-         for (song in songs) {
-             CoverCache.getCoverPath(context, song.url)?.let { path ->
-                 cachedCovers[song.url] = path
-                 Log.d("PlaylistStateController", "Cached cover found for: ${song.name} -> $path")
-             }
-         }
-         Log.d("PlaylistStateController", "Loaded ${cachedCovers.size} cached covers")
-         _state.value = _state.value.copy(cachedCoverMap = cachedCovers)
-     }
+          val cachedCovers = mutableMapOf<String, String>()
+          for (song in songs) {
+              CoverCache.getCoverPath(context, song.url)?.let { path ->
+                  cachedCovers[song.url] = path
+                  Log.d("PlaylistStateController", "Cached cover found for: ${song.name} -> $path")
+              }
+          }
+          Log.d("PlaylistStateController", "Loaded ${cachedCovers.size} cached covers")
+          _state.value = _state.value.copy(cachedCoverMap = cachedCovers)
+      }
+
+    fun cacheCurrentSong(webDavConfig: WebDavConfig) {
+        val currentSong = state.currentSong ?: return
+        context?.let { ctx ->
+            CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val isCached = MusicCache.isCached(ctx, currentSong.url)
+                if (!isCached) {
+                    Log.d("PlaylistStateController", "Caching current song: ${currentSong.name}")
+                    MusicCache.cacheSong(ctx, currentSong, webDavConfig)
+                        .onSuccess {
+                            Log.d("PlaylistStateController", "Song cached successfully: ${currentSong.name}")
+                        }
+                        .onFailure { e ->
+                            Log.e("PlaylistStateController", "Failed to cache song: ${currentSong.name}", e)
+                        }
+                } else {
+                    Log.d("PlaylistStateController", "Song already cached: ${currentSong.name}")
+                }
+            }
+        }
+    }
+
+    fun prefetchNextSong(webDavConfig: WebDavConfig) {
+        val nextIndex = state.currentIndex + 1
+        if (nextIndex < state.songs.size) {
+            val nextSong = state.songs[nextIndex]
+            context?.let { ctx ->
+                CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    val isCached = MusicCache.isCached(ctx, nextSong.url)
+                    if (!isCached) {
+                        Log.d("PlaylistStateController", "Prefetching next song: ${nextSong.name}")
+                        MusicCache.cacheSong(ctx, nextSong, webDavConfig)
+                            .onSuccess {
+                                Log.d("PlaylistStateController", "Next song prefetched: ${nextSong.name}")
+                            }
+                            .onFailure { e ->
+                                Log.e("PlaylistStateController", "Failed to prefetch next song: ${nextSong.name}", e)
+                            }
+                    }
+                }
+            }
+        }
+    }
  }
 
 @Composable

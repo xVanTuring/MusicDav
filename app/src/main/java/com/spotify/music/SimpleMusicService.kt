@@ -15,6 +15,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.common.Player
 import com.spotify.music.data.PlayMode
+import com.spotify.music.player.CachedDataSource
 import okhttp3.Credentials
 
 class SimpleMusicService : MediaSessionService() {
@@ -70,8 +71,11 @@ class SimpleMusicService : MediaSessionService() {
         // Apply auth headers if credentials are available
         updateAuthHeaders()
 
+        // Create cached data source factory
+        val cachedDataSourceFactory = CachedDataSource.Factory(context, httpDataSourceFactory!!)
+
         player = ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpDataSourceFactory!!))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(cachedDataSourceFactory))
             .build()
 
         // 设置播放模式监听器
@@ -139,13 +143,16 @@ class SimpleMusicService : MediaSessionService() {
             for (i in 0 until existingPlayer.mediaItemCount) {
                 existingPlayer.getMediaItemAt(i).let { mediaItems.add(it) }
             }
-            
+
             // Release old player
             existingPlayer.release()
-            
+
+            // Create cached data source factory
+            val cachedDataSourceFactory = CachedDataSource.Factory(this, httpDataSourceFactory!!)
+
             // Create new player with updated credentials
             val newPlayer = ExoPlayer.Builder(this)
-                .setMediaSourceFactory(DefaultMediaSourceFactory(httpDataSourceFactory!!))
+                .setMediaSourceFactory(DefaultMediaSourceFactory(cachedDataSourceFactory))
                 .build()
                 .apply {
                     if (mediaItems.isNotEmpty()) {
@@ -155,14 +162,14 @@ class SimpleMusicService : MediaSessionService() {
                         if (wasPlaying) play()
                     }
                 }
-            
+
             player = newPlayer
-            
+
             // Update session with new player
             mediaSession?.let { session ->
                 val sessionActivity = session.sessionActivity
                 session.release()
-                
+
                 val newSessionBuilder = MediaSession.Builder(this, newPlayer)
                 sessionActivity?.let { newSessionBuilder.setSessionActivity(it) }
                 mediaSession = newSessionBuilder.build()

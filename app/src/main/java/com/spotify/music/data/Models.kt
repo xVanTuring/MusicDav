@@ -66,7 +66,7 @@ enum class PlayMode {
 
             // 优先级 1: 缓存的本地封面文件（即使在加载元数据时也可以使用）
             cachedCoverMap[currentSong.url]?.let {
-                android.util.Log.d("PlaylistState", "使用缓存封面: ${currentSong.name}")
+//                android.util.Log.d("PlaylistState", "使用缓存封面: ${currentSong.name}")
                 return it
             }
 
