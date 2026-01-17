@@ -16,6 +16,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,7 +55,7 @@ fun AlbumDetailScreen(
     var hasTriedInitialRefresh by remember { mutableStateOf(false) }
 
     // 缓存状态
-    val cacheManager = remember { CacheManager() }
+    val cacheManager = remember { CacheManager(context) }
     var isCachingAlbum by remember { mutableStateOf(false) }
     var cachingProgress by remember { mutableStateOf("") }
 
@@ -79,6 +80,13 @@ fun AlbumDetailScreen(
     // 设置 WebDAV 凭据
     LaunchedEffect(webDavConfig) {
         playlistController.setCredentials(webDavConfig)
+        cacheManager.bind()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            cacheManager.unbind()
+        }
     }
 
     // 初始加载时刷新专辑详情

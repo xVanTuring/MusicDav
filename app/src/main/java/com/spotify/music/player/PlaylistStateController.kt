@@ -22,6 +22,7 @@ import com.spotify.music.data.MusicFile
 import com.spotify.music.data.PlaylistState
 import com.spotify.music.data.PlayMode
 import com.spotify.music.data.WebDavConfig
+import com.spotify.music.MusicCacheService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -464,19 +465,14 @@ import androidx.compose.ui.platform.LocalContext
     fun cacheCurrentSong(webDavConfig: WebDavConfig) {
         val currentSong = state.currentSong ?: return
         context?.let { ctx ->
-            CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
+            scope.launch {
                 val isCached = MusicCache.isCached(ctx, currentSong.url)
                 if (!isCached) {
-                    Log.d("PlaylistStateController", "Caching current song: ${currentSong.name}")
-                    MusicCache.cacheSong(ctx, currentSong, webDavConfig)
-                        .onSuccess {
-                            Log.d("PlaylistStateController", "Song cached successfully: ${currentSong.name}")
-                        }
-                        .onFailure { e ->
-                            Log.e("PlaylistStateController", "Failed to cache song: ${currentSong.name}", e)
-                        }
+                    Log.d("PlaylistStateController", "🎵 Requesting cache for current song: ${currentSong.name}")
+                    MusicCacheService.startCaching(ctx, currentSong, webDavConfig)
                 } else {
-                    Log.d("PlaylistStateController", "Song already cached: ${currentSong.name}")
+                    Log.d("PlaylistStateController", "✅ Song already cached: ${currentSong.name}")
                 }
             }
         }
@@ -487,17 +483,12 @@ import androidx.compose.ui.platform.LocalContext
         if (nextIndex < state.songs.size) {
             val nextSong = state.songs[nextIndex]
             context?.let { ctx ->
-                CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
+                scope.launch {
                     val isCached = MusicCache.isCached(ctx, nextSong.url)
                     if (!isCached) {
-                        Log.d("PlaylistStateController", "Prefetching next song: ${nextSong.name}")
-                        MusicCache.cacheSong(ctx, nextSong, webDavConfig)
-                            .onSuccess {
-                                Log.d("PlaylistStateController", "Next song prefetched: ${nextSong.name}")
-                            }
-                            .onFailure { e ->
-                                Log.e("PlaylistStateController", "Failed to prefetch next song: ${nextSong.name}", e)
-                            }
+                        Log.d("PlaylistStateController", "⏭️ Prefetching cache for next song: ${nextSong.name}")
+                        MusicCacheService.startCaching(ctx, nextSong, webDavConfig)
                     }
                 }
             }

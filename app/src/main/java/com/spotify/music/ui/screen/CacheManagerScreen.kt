@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,8 +60,18 @@ fun CacheManagerScreen(
     var itemToDelete by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        scope.launch {
-            cacheManager.refreshCacheState(context)
+        cacheManager.bind()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            cacheManager.unbind()
+        }
+    }
+
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            cacheManager.unbind()
         }
     }
 
@@ -142,13 +153,13 @@ fun CacheManagerScreen(
                                 }
                             } else {
                                 IconButton(
-                                    onClick = {
-                                        scope.launch {
-                                            isLoading = true
-                                            cacheManager.refreshCacheState(context)
-                                            isLoading = false
-                                        }
-                                    }
+                            onClick = {
+                                scope.launch {
+                                    isLoading = true
+                                    cacheManager.refreshCacheState()
+                                    isLoading = false
+                                }
+                            }
                                 ) {
                                     Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                                 }

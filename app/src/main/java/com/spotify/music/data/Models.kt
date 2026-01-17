@@ -1,5 +1,7 @@
 package com.spotify.music.data
 
+import androidx.core.content.edit
+
 data class WebDavConfig(
     val url: String = "",
     val username: String = "",
@@ -72,13 +74,13 @@ enum class PlayMode {
 
             // 如果正在加载元数据且没有缓存，返回null
             if (isLoadingMetadata) {
-                android.util.Log.d("PlaylistState", "正在加载元数据且无缓存，返回null: ${currentSong.name}")
+//                android.util.Log.d("PlaylistState", "正在加载元数据且无缓存，返回null: ${currentSong.name}")
                 return null
             }
 
             // 优先级 2: 当前播放器提取的内嵌封面
             currentEmbeddedCoverUrl?.let {
-                android.util.Log.d("PlaylistState", "使用内嵌封面: ${currentSong.name}")
+//                android.util.Log.d("PlaylistState", "使用内嵌封面: ${currentSong.name}")
                 return it
             }
 
@@ -88,7 +90,7 @@ enum class PlayMode {
                 return it
             }
 
-            android.util.Log.d("PlaylistState", "无封面可用: ${currentSong.name}")
+//            android.util.Log.d("PlaylistState", "无封面可用: ${currentSong.name}")
             return null
         }
 
@@ -133,7 +135,7 @@ object ServerConfigRepository {
 
     fun save(context: android.content.Context, configs: List<ServerConfig>) {
         val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
-        prefs.edit().putString(KEY_CONFIGS, toJson(configs)).apply()
+        prefs.edit { putString(KEY_CONFIGS, toJson(configs)) }
     }
 
     fun add(context: android.content.Context, config: ServerConfig) {
@@ -205,7 +207,7 @@ object ServerConfigRepository {
 
     fun save(context: android.content.Context, albums: List<Album>) {
         val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
-        prefs.edit().putString(KEY_ALBUMS, toJson(albums)).apply()
+        prefs.edit { putString(KEY_ALBUMS, toJson(albums)) }
     }
 
     private fun parseAlbums(json: String): List<Album> {
@@ -273,7 +275,7 @@ object PlaylistCache {
     fun save(context: android.content.Context, directoryUrl: String?, musicFiles: List<MusicFile>) {
         val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
         val key = getCacheKey(directoryUrl)
-        prefs.edit().putString(key, toJson(musicFiles)).apply()
+        prefs.edit { putString(key, toJson(musicFiles)) }
     }
     
     private fun parseMusicFiles(json: String): List<MusicFile> {
