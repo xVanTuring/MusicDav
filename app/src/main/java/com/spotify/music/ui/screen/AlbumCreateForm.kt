@@ -88,7 +88,7 @@ fun AlbumCreateForm(
     var isCoverLoading by remember { mutableStateOf(false) }
 
     // Dialog visibility states
-    var directoryPickerVisible by remember { mutableStateOf(false) }
+    var selectingFolder by remember { mutableStateOf(false) }
     var coverPickerVisible by remember { mutableStateOf(false) }
     var showClearCoverDialog by remember { mutableStateOf(false) }
 
@@ -156,8 +156,8 @@ fun AlbumCreateForm(
     // 拦截返回键
     BackHandler {
         when {
+            selectingFolder -> selectingFolder = false
             showClearCoverDialog -> showClearCoverDialog = false
-            directoryPickerVisible -> directoryPickerVisible = false
             coverPickerVisible -> coverPickerVisible = false
             else -> onCancel()
         }
@@ -181,17 +181,42 @@ fun AlbumCreateForm(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (editingAlbum != null) "Edit Album" else "Create Album") },
-                navigationIcon = {
-                    IconButton(onClick = onCancel) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+    if (selectingFolder) {
+        FolderPickerScreen(
+            webDavConfig = getCurrentWebDavConfig(),
+            initialPath = directoryUrl ?: getCurrentWebDavConfig().url,
+            config = FilePickerConfig(
+                title = "选择文件夹",
+                mode = FilePickerMode.DIRECTORY_ONLY,
+                showClearSelectionButton = false,
+                showFileIcons = true,
+                showFilesInDirectoryMode = true
+            ),
+            onConfirm = { path ->
+                path?.let {
+                    directoryUrl = it
+                    if (name.isBlank()) {
+                        name = it.trimEnd('/').substringAfterLast('/')
                     }
                 }
-            )
-        }
+                selectingFolder = false
+            },
+            onCancel = {
+                selectingFolder = false
+            }
+        )
+    } else {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(if (editingAlbum != null) "Edit Album" else "Create Album") },
+                    navigationIcon = {
+                        IconButton(onClick = onCancel) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                )
+            }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -381,7 +406,7 @@ fun AlbumCreateForm(
                                     errorMessage = "Please fill in URL, username and password"
                                     return@Button
                                 }
-                                directoryPickerVisible = true
+                                selectingFolder = true
                             },
                             enabled = !isLoading && !isDirectoryLoading,
                             modifier = Modifier.padding(top = 12.dp)
@@ -598,25 +623,8 @@ fun AlbumCreateForm(
         }
     }
 
-    // Folder picker dialog
-    val currentWebDavConfig = getCurrentWebDavConfig()
-    FolderPickerDialog(
-        isVisible = directoryPickerVisible,
-        webDavConfig = currentWebDavConfig,
-        initialPath = directoryUrl ?: currentWebDavConfig.url,
-        onDismiss = { directoryPickerVisible = false },
-        onFolderSelected = { path ->
-            directoryUrl = path
-            if (name.isBlank()) {
-                val folderName = path.trimEnd('/').substringAfterLast('/')
-                name = folderName
-            }
-        },
-        onClearCoverSelection = { manuallySelectedCoverImageUrl = null },
-        hasCoverSelection = manuallySelectedCoverImageUrl != null
-    )
-
     // Cover image picker dialog
+    val currentWebDavConfig = getCurrentWebDavConfig()
     CoverImagePickerDialog(
         isVisible = coverPickerVisible,
         webDavConfig = currentWebDavConfig,
@@ -652,5 +660,6 @@ fun AlbumCreateForm(
                 }
             }
         )
+    }
     }
 }

@@ -35,129 +35,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.spotify.music.data.WebDavConfig
 import com.spotify.music.webdav.WebDavClient
 import kotlinx.coroutines.launch
 import java.net.URL
-
-/**
- * 解析WebDAV配置，获取基础URL（不含路径部分）
- */
-private fun parseWebDavBaseUrl(webDavConfig: WebDavConfig): String {
-    val url = webDavConfig.url.trimEnd('/')
-    return try {
-        val urlObj = URL(url)
-        val baseUrl = "${urlObj.protocol}://${urlObj.host}"
-        if (urlObj.port != -1 && urlObj.port != urlObj.defaultPort) {
-            "$baseUrl:${urlObj.port}"
-        } else {
-            baseUrl
-        }
-    } catch (e: Exception) {
-        // 如果解析失败，返回原URL
-        url
-    }
-}
-
-/**
- * 解析WebDAV配置，获取服务器根路径
- */
-private fun parseWebDavRootPath(webDavConfig: WebDavConfig): String {
-    val url = webDavConfig.url.trimEnd('/')
-    return try {
-        val urlObj = URL(url)
-        urlObj.path.trimEnd('/')
-    } catch (e: Exception) {
-        // 如果解析失败，假设根路径为空
-        ""
-    }
-}
-
-/**
- * 根据WebDAV配置和当前路径，生成完整的历史路径栈
- */
-private fun generatePathHistory(webDavConfig: WebDavConfig, currentPath: String): List<String> {
-    val baseUrl = parseWebDavBaseUrl(webDavConfig)
-    val rootPath = parseWebDavRootPath(webDavConfig)
-    val normalizedCurrentPath = currentPath.trimEnd('/')
-
-    // 如果当前路径是完整的URL，提取路径部分
-    val currentPathOnly = if (normalizedCurrentPath.startsWith("http")) {
-        try {
-            URL(normalizedCurrentPath).path.trimEnd('/')
-        } catch (e: Exception) {
-            normalizedCurrentPath
-        }
-    } else {
-        normalizedCurrentPath
-    }
-
-    // 构建完整路径历史
-    val pathHistory = mutableListOf<String>()
-
-    // 首先添加WebDAV服务器根URL
-    if (rootPath.isNotEmpty()) {
-        pathHistory.add("$baseUrl$rootPath")
-    } else {
-        pathHistory.add(baseUrl)
-    }
-
-    // 如果当前路径和根路径不同，添加中间路径
-    if (currentPathOnly != rootPath) {
-        // 计算相对路径
-        val relativePath = if (rootPath.isNotEmpty()) {
-            currentPathOnly.removePrefix(rootPath).trimStart('/')
-        } else {
-            currentPathOnly.trimStart('/')
-        }
-
-        // 逐级添加路径
-        if (relativePath.isNotEmpty()) {
-            val pathSegments = relativePath.split("/").filter { it.isNotEmpty() }
-            var accumulatedPath = if (rootPath.isNotEmpty()) rootPath else ""
-
-            for (segment in pathSegments) {
-                accumulatedPath = "$accumulatedPath/$segment"
-                pathHistory.add("$baseUrl$accumulatedPath")
-            }
-        }
-    }
-
-    return pathHistory.distinct()
-}
-
-/**
- * 计算上级目录路径
- */
-private fun calculateParentPath(webDavConfig: WebDavConfig, currentPath: String): String? {
-    val pathHistory = generatePathHistory(webDavConfig, currentPath)
-    return if (pathHistory.size > 1) {
-        pathHistory[pathHistory.size - 2]
-    } else {
-        null // 已经是根目录
-    }
-}
-
-/**
- * 标准化路径，确保使用完整URL格式
- */
-private fun normalizePath(webDavConfig: WebDavConfig, path: String): String {
-    val normalizedPath = path.trimEnd('/')
-    return if (normalizedPath.startsWith("http")) {
-        normalizedPath
-    } else {
-        // 相对路径，需要补充为完整URL
-        val baseUrl = parseWebDavBaseUrl(webDavConfig)
-        val rootPath = parseWebDavRootPath(webDavConfig)
-        if (rootPath.isNotEmpty()) {
-            "$baseUrl$rootPath/$normalizedPath".trimEnd('/')
-        } else {
-            "$baseUrl/$normalizedPath".trimEnd('/')
-        }
-    }
-}
 
 enum class FilePickerMode {
     DIRECTORY_ONLY,    // 只能选择目录
@@ -174,23 +56,6 @@ data class FilePickerConfig(
     val showClearSelectionButton: Boolean = false,
     val showFilesInDirectoryMode: Boolean = true // 在目录模式下是否显示文件（只读）
 )
-
-/**
- * 根据文件扩展名获取对应的 Material Design 图标
- */
-@Composable
-private fun getFileIcon(fileExtension: String): ImageVector {
-    return when (fileExtension.lowercase()) {
-        // 音频文件
-        "mp3", "m4a", "flac", "wav", "ogg", "aac", "wma" -> Icons.Default.AudioFile
-        // 图片文件
-        "jpg", "jpeg", "png", "webp", "gif", "bmp", "svg" -> Icons.Default.Image
-        // 文档文件
-        "txt", "md", "pdf", "doc", "docx", "rtf" -> Icons.Default.Description
-        // 其他文件
-        else -> Icons.Default.Description
-    }
-}
 
 @Composable
 fun FilePickerDialog(
