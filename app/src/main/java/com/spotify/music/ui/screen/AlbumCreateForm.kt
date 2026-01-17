@@ -89,7 +89,7 @@ fun AlbumCreateForm(
 
     // Dialog visibility states
     var selectingFolder by remember { mutableStateOf(false) }
-    var coverPickerVisible by remember { mutableStateOf(false) }
+    var selectingCover by remember { mutableStateOf(false) }
     var showClearCoverDialog by remember { mutableStateOf(false) }
 
     
@@ -157,8 +157,8 @@ fun AlbumCreateForm(
     BackHandler {
         when {
             selectingFolder -> selectingFolder = false
+            selectingCover -> selectingCover = false
             showClearCoverDialog -> showClearCoverDialog = false
-            coverPickerVisible -> coverPickerVisible = false
             else -> onCancel()
         }
     }
@@ -181,7 +181,37 @@ fun AlbumCreateForm(
         }
     }
 
-    if (selectingFolder) {
+    if (selectingCover) {
+        FolderPickerScreen(
+            webDavConfig = getCurrentWebDavConfig(),
+            initialPath = directoryUrl ?: getCurrentWebDavConfig().url,
+            config = FilePickerConfig(
+                title = "选择封面图片",
+                subtitle = "点击图片文件可选择作为封面",
+                mode = FilePickerMode.FILE_ONLY,
+                allowedFileExtensions = setOf("jpg", "jpeg", "png", "webp"),
+                showFileIcons = true,
+                showClearSelectionButton = false,
+                showFilesInDirectoryMode = false
+            ),
+            initiallySelectedPath = manuallySelectedCoverImageUrl,
+            onConfirm = { path ->
+                path?.let {
+                    if (it.startsWith("http")) {
+                        manuallySelectedCoverImageUrl = it
+                    } else {
+                        val webDavClient = com.spotify.music.webdav.WebDavClient()
+                        val fullUrl = webDavClient.buildFullUrl(getCurrentWebDavConfig().url, it)
+                        manuallySelectedCoverImageUrl = fullUrl
+                    }
+                }
+                selectingCover = false
+            },
+            onCancel = {
+                selectingCover = false
+            }
+        )
+    } else if (selectingFolder) {
         FolderPickerScreen(
             webDavConfig = getCurrentWebDavConfig(),
             initialPath = directoryUrl ?: getCurrentWebDavConfig().url,
@@ -480,7 +510,7 @@ fun AlbumCreateForm(
                                                     errorMessage = "Please fill in URL, username and password"
                                                     return@combinedClickable
                                                 }
-                                                coverPickerVisible = true
+                                                selectingCover = true
                                             },
                                             onLongClick = {
                                                 showClearCoverDialog = true
@@ -489,20 +519,20 @@ fun AlbumCreateForm(
                                 )
                             } else {
                                 // 未选择封面，显示默认按钮
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .combinedClickable(
-                                            onClick = {
-                                                val config = getCurrentWebDavConfig()
-                                                if (config.url.isBlank() || config.username.isBlank() || config.password.isBlank()) {
-                                                    errorMessage = "Please fill in URL, username and password"
-                                                    return@combinedClickable
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .combinedClickable(
+                                                onClick = {
+                                                    val config = getCurrentWebDavConfig()
+                                                    if (config.url.isBlank() || config.username.isBlank() || config.password.isBlank()) {
+                                                        errorMessage = "Please fill in URL, username and password"
+                                                        return@combinedClickable
+                                                    }
+                                                    selectingCover = true
                                                 }
-                                                coverPickerVisible = true
-                                            }
-                                        ),
+                                            ),
                                     colors = CardDefaults.cardColors(
                                         containerColor = MaterialTheme.colorScheme.surface
                                     ),
@@ -622,19 +652,6 @@ fun AlbumCreateForm(
             }
         }
     }
-
-    // Cover image picker dialog
-    val currentWebDavConfig = getCurrentWebDavConfig()
-    CoverImagePickerDialog(
-        isVisible = coverPickerVisible,
-        webDavConfig = currentWebDavConfig,
-        initialPath = directoryUrl ?: currentWebDavConfig.url,
-        onDismiss = { coverPickerVisible = false },
-        onCoverSelected = { coverPath ->
-            manuallySelectedCoverImageUrl = coverPath
-        },
-        initiallySelectedCover = manuallySelectedCoverImageUrl
-    )
 
     // Clear cover confirmation dialog
     if (showClearCoverDialog) {
