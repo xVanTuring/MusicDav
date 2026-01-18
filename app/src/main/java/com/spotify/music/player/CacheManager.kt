@@ -16,12 +16,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
+data class AlbumCacheProgress(
+    val totalSongs: Int,
+    val completedSongs: Int,
+    val currentSong: String?
+)
+
 data class CacheManagerState(
     val totalSize: Long = 0L,
     val cachedSongs: List<CacheMetadata> = emptyList(),
     val isCaching: Boolean = false,
     val cachingProgress: Map<String, Int> = emptyMap(),
-    val cachingStatus: String? = null
+    val cachingStatus: String? = null,
+    val albumCachingProgress: Map<String, AlbumCacheProgress> = emptyMap()
 )
 
 class CacheManager(private val context: Context) {
@@ -32,6 +39,9 @@ class CacheManager(private val context: Context) {
 
     private val _state = mutableStateOf(CacheManagerState())
     val state: CacheManagerState get() = _state.value
+
+    private val urlToAlbumId = mutableMapOf<String, String>()
+    private val albumProgress = mutableMapOf<String, AlbumCacheProgress>()
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -55,6 +65,19 @@ class CacheManager(private val context: Context) {
     private val taskListener = object : MusicCacheService.CacheTaskListener {
         override fun onTaskStarted(taskId: String, musicFile: MusicFile) {
             Log.d("CacheManager", "Task started: ${musicFile.name}")
+            
+            val albumId = urlToAlbumId[musicFile.url]
+            if (albumId != null) {
+                val currentProgress = albumProgress[albumId]
+                if (currentProgress != null) {
+                    albumProgress[albumId] = currentProgress.copy(
+                        currentSong = musicFile.name
+                    )
+                    _state.value = _state.value.copy(
+                        albumCachingProgress = _state.value.albumCachingProgress + (albumId to albumProgress[albumId]!!)
+                    )
+                }
+            }
         }
 
         override fun onTaskProgress(taskId: String, progress: Int) {
@@ -66,6 +89,32 @@ class CacheManager(private val context: Context) {
 
         override fun onTaskCompleted(taskId: String, path: String?) {
             Log.d("CacheManager", "Task completed: $taskId")
+            
+            val task = cacheService?.getTask(taskId)
+            val musicFileUrl = task?.musicFile?.url
+            val albumId = musicFileUrl?.let { urlToAlbumId[it] }
+            
+            if (albumId != null) {
+                val currentProgress = albumProgress[albumId]
+                if (currentProgress != null) {
+                    val newProgress = currentProgress.copy(
+                        completedSongs = currentProgress.completedSongs + 1
+                    )
+                    albumProgress[albumId] = newProgress
+                    _state.value = _state.value.copy(
+                        albumCachingProgress = _state.value.albumCachingProgress + (albumId to newProgress)
+                    )
+                    
+                    if (newProgress.completedSongs >= newProgress.totalSongs) {
+                        albumProgress.remove(albumId)
+                        urlToAlbumId.remove(musicFileUrl)
+                        _state.value = _state.value.copy(
+                            albumCachingProgress = _state.value.albumCachingProgress - albumId
+                        )
+                    }
+                }
+            }
+            
             serviceScope.launch {
                 refreshCacheState()
             }
@@ -82,7 +131,8 @@ class CacheManager(private val context: Context) {
             _state.value = _state.value.copy(
                 isCaching = false,
                 cachingProgress = emptyMap(),
-                cachingStatus = null
+                cachingStatus = null,
+                albumCachingProgress = emptyMap()
             )
         }
     }
@@ -146,20 +196,35 @@ class CacheManager(private val context: Context) {
         context: Context,
         musicFiles: List<MusicFile>,
         config: WebDavConfig,
+        albumId: String,
         onSuccess: (Int) -> Unit = {},
         onFailure: (Throwable) -> Unit = {}
     ) {
         scope.launch {
+            val albumKey = albumId
+            
+            musicFiles.forEach { musicFile ->
+                urlToAlbumId[musicFile.url] = albumKey
+            }
+
+            albumProgress[albumKey] = AlbumCacheProgress(
+                totalSongs = musicFiles.size,
+                completedSongs = 0,
+                currentSong = null
+            )
+            
             _state.value = _state.value.copy(
                 isCaching = true,
-                cachingStatus = "Caching ${musicFiles.size} songs..."
+                cachingStatus = "Caching ${musicFiles.size} songs...",
+                albumCachingProgress = _state.value.albumCachingProgress + (albumKey to AlbumCacheProgress(
+                    totalSongs = musicFiles.size,
+                    completedSongs = 0,
+                    currentSong = null
+                ))
             )
 
-            for ((index, musicFile) in musicFiles.withIndex()) {
+            for (musicFile in musicFiles) {
                 MusicCacheService.startCaching(context, musicFile, config)
-                _state.value = _state.value.copy(
-                    cachingStatus = "Caching: ${index + 1}/${musicFiles.size}"
-                )
             }
 
             onSuccess(musicFiles.size)
@@ -197,6 +262,10 @@ class CacheManager(private val context: Context) {
             bytes < 1024 * 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
             else -> String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
         }
+    }
+
+    fun getAlbumCacheProgress(albumId: String): AlbumCacheProgress? {
+        return _state.value.albumCachingProgress[albumId]
     }
 
     protected fun finalize() {

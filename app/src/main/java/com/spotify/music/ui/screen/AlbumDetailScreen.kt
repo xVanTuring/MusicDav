@@ -57,8 +57,7 @@ fun AlbumDetailScreen(
 
     // 缓存状态
     val cacheManager = remember { CacheManager(context) }
-    var isCachingAlbum by remember { mutableStateOf(false) }
-    var cachingProgress by remember { mutableStateOf("") }
+    val albumCacheProgress = cacheManager.state.albumCachingProgress[album.id]
 
     // 拦截返回键，返回到专辑列表页面
     BackHandler {
@@ -170,21 +169,19 @@ fun AlbumDetailScreen(
                     }
                     IconButton(
                         onClick = {
-                            if (currentAlbumSongs.isNotEmpty() && !isCachingAlbum) {
-                                isCachingAlbum = true
+                            if (currentAlbumSongs.isNotEmpty() && albumCacheProgress == null) {
                                 cacheManager.cacheAlbum(
                                     scope = coroutineScope,
                                     context = context,
                                     musicFiles = currentAlbumSongs,
                                     config = webDavConfig,
+                                    albumId = album.id,
                                     onSuccess = { count ->
                                         Toast.makeText(
                                             context,
                                             "正在缓存 $count 首歌曲...",
                                             Toast.LENGTH_SHORT
                                         ).show()
-                                        isCachingAlbum = false
-                                        cachingProgress = ""
                                     },
                                     onFailure = { error ->
                                         Toast.makeText(
@@ -192,15 +189,13 @@ fun AlbumDetailScreen(
                                             "Failed to cache album: ${error.message}",
                                             Toast.LENGTH_SHORT
                                         ).show()
-                                        isCachingAlbum = false
-                                        cachingProgress = ""
                                     }
                                 )
                             }
                         },
-                        enabled = currentAlbumSongs.isNotEmpty() && !isCachingAlbum
+                        enabled = currentAlbumSongs.isNotEmpty() && albumCacheProgress == null
                     ) {
-                        if (isCachingAlbum) {
+                        if (albumCacheProgress != null) {
                             androidx.compose.material3.CircularProgressIndicator(
                                 modifier = Modifier
                                     .size(24.dp),
