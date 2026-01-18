@@ -234,6 +234,215 @@ AsyncImage(
 )
 ```
 
+## Caching System
+
+### Architecture Overview
+
+The caching system consists of three main components:
+
+1. **CacheManager** - High-level cache management
+2. **MusicCacheService** - Foreground service handling cache tasks
+3. **MusicCache** - Low-level file caching implementation
+
+### CacheManager
+
+**Location**: `com.spotify.music.player.CacheManager`
+
+**Purpose**: 
+- Manages communication with MusicCacheService
+- Tracks cache state (individual and album tasks)
+- Provides caching operations interface
+- Listens to service task state changes
+
+**Key State**:
+```kotlin
+data class CacheManagerState(
+    val totalSize: Long = 0L,
+    val cachedSongs: List<CacheMetadata> = emptyList(),
+    val isCaching: Boolean = false,
+    val cachingProgress: Map<String, Int> = emptyMap(),  // taskId -> progress
+    val cachingStatus: String? = null,
+    val albumCachingProgress: Map<String, AlbumCacheProgress> = emptyMap()
+)
+
+data class AlbumCacheProgress(
+    val totalSongs: Int,
+    val completedSongs: Int,
+    val currentSong: String?
+)
+```
+
+**Key Methods**:
+```kotlin
+fun bind()  // Connect to MusicCacheService
+fun unbind()  // Disconnect and clean up
+fun cacheSong(...)  // Cache a single song
+fun cacheAlbum(...)  // Cache an entire album
+suspend fun refreshCacheState()  // Update cache state
+suspend fun clearCache(context: Context)  // Clear all cached files
+suspend fun isCached(context: Context, url: String): Boolean  // Check if song is cached
+```
+
+**Important**: Must call `cacheService?.addListener(taskListener)` in `onServiceConnected` to receive task updates.
+
+### MusicCacheService
+
+**Location**: `com.spotify.music.MusicCacheService`
+
+**Purpose**:
+- Foreground service handling cache tasks
+- Manages active task queue
+- Provides task listener interface
+- Shows download progress in notification
+
+**Key Features**:
+- Runs as foreground service for persistent downloads
+- Supports multiple concurrent tasks
+- Notifies listeners on task state changes
+- Auto-stops foreground when all tasks complete
+
+**Task Status Flow**:
+```
+PENDING -> DOWNLOADING -> COMPLETED
+                     |
+                     v
+                   FAILED/CANCELLED
+```
+
+**CacheTaskListener Interface**:
+```kotlin
+interface CacheTaskListener {
+    fun onTaskStarted(taskId: String, musicFile: MusicFile)
+    fun onTaskProgress(taskId: String, progress: Int)
+    fun onTaskCompleted(taskId: String, path: String?)
+    fun onTaskFailed(taskId: String, error: Throwable)
+    fun onAllTasksCompleted()
+}
+```
+
+### MusicCache
+
+**Location**: `com.spotify.music.player.MusicCache`
+
+**Purpose**:
+- Low-level file caching operations
+- Manages cache metadata storage
+- Provides cache existence checking
+
+**Key Methods**:
+```kotlin
+suspend fun cacheSong(context: Context, musicFile: MusicFile, config: WebDavConfig, onProgress: (Int) -> Unit): Result<String>
+suspend fun clearCache(context: Context): Result<Unit>
+suspend fun removeCachedSong(context: Context, url: String): Result<Unit>
+suspend fun isCached(context: Context, url: String): Boolean
+suspend fun getCachedSongs(context: Context): List<CacheMetadata>
+suspend fun getCurrentCacheSize(context: Context): Long
+```
+
+### Caching in Compose UI
+
+**CRITICAL: Always use CacheManager state, never local state**
+
+When implementing cache status in UI components:
+
+❌ **WRONG** - Using local state that doesn't update:
+```kotlin
+@Composable
+fun MusicListItem(musicFile: MusicFile, ...) {
+    val isCached = remember { mutableStateOf(false) }  // Never updates!
+    
+    LaunchedEffect(musicFile.url) {
+        isCached.value = MusicCache.isCached(context, musicFile.url)
+    }
+}
+```
+
+✅ **CORRECT** - Using CacheManager state for reactive updates:
+```kotlin
+@Composable
+fun MusicListItem(
+    musicFile: MusicFile,
+    cacheManager: CacheManager?,  // Accept CacheManager
+    ...
+) {
+    val isCached = cacheManager?.state?.cachedSongs?.any { it.url == musicFile.url } ?: false
+    val isCaching = cacheManager?.state?.cachingProgress?.containsKey(musicFile.url) ?: false
+    
+    // UI automatically updates when cacheManager.state changes
+}
+```
+
+**Album Caching Progress**:
+```kotlin
+val albumCacheProgress = cacheManager?.state?.albumCachingProgress[albumId]
+if (albumCacheProgress != null) {
+    CircularProgressIndicator(progress = albumCacheProgress.completedSongs / albumCacheProgress.totalSongs)
+}
+```
+
+### Caching State Lifecycle
+
+**For Individual Songs**:
+1. User clicks cache button → `cacheManager.cacheSong()`
+2. Service starts task → `onTaskStarted` → update `cachingProgress`
+3. Progress updates → `onTaskProgress` → update progress
+4. Task completes → `onTaskCompleted` → add to `cachedSongs`, remove from `cachingProgress`
+
+**For Albums**:
+1. User clicks album cache → `cacheManager.cacheAlbum()`
+2. Create `AlbumCacheProgress` entry in `albumCachingProgress`
+3. Queue all songs → individual tasks start
+4. Each song completion → update `AlbumCacheProgress.completedSongs`
+5. All songs complete → remove `AlbumCacheProgress`, call `onAllTasksCompleted`
+
+### Common Patterns
+
+**Starting Album Cache**:
+```kotlin
+fun cacheAlbum(
+    albumId: String,
+    musicFiles: List<MusicFile>,
+    config: WebDavConfig
+) {
+    scope.launch {
+        albumProgress[albumId] = AlbumCacheProgress(
+            totalSongs = musicFiles.size,
+            completedSongs = 0,
+            currentSong = null
+        )
+        
+        for (musicFile in musicFiles) {
+            MusicCacheService.startCaching(context, musicFile, config)
+        }
+    }
+}
+```
+
+**Checking Cache Status**:
+```kotlin
+val isCached = cacheManager?.state?.cachedSongs?.any { it.url == musicFile.url } ?: false
+val isCaching = cacheManager?.state?.cachingProgress?.containsKey(musicFile.url) ?: false
+```
+
+**Cleanup on Album Completion**:
+```kotlin
+if (newProgress.completedSongs >= newProgress.totalSongs) {
+    albumProgress.remove(albumId)
+    urlToAlbumId.keys.removeAll { urlToAlbumId[it] == albumId }
+    _state.value = _state.value.copy(
+        albumCachingProgress = _state.value.albumCachingProgress - albumId
+    )
+}
+```
+
+### Pitfalls to Avoid
+
+1. **Not registering listener**: Always call `cacheService?.addListener(taskListener)` in `onServiceConnected`
+2. **Using local state**: Never use `remember { mutableStateOf() }` for cache status; always derive from `cacheManager.state`
+3. **Memory leaks**: Always call `unbind()` in `DisposableEffect.onDispose`
+4. **Not cleaning up album mappings**: Remove all URL→albumId mappings when album completes
+5. **Stale state**: UI components must accept `CacheManager` as parameter to access real-time state
+
 ## Project Configuration
 
 ### Build Versions
