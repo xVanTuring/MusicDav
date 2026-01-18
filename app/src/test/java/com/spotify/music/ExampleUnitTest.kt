@@ -1,4 +1,4 @@
-package com.spotify.music
+package tech.xvanturing.musicdav
 
 import org.junit.Test
 

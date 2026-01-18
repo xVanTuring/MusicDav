@@ -1,6 +1,6 @@
-package com.spotify.music.ui.screen
+package tech.xvanturing.musicdav.ui.screen
 
-import com.spotify.music.data.WebDavConfig
+import tech.xvanturing.musicdav.data.WebDavConfig
 import org.junit.Test
 import org.junit.Assert.*
 import java.net.URL

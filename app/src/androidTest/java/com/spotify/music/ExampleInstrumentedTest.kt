@@ -1,4 +1,4 @@
-package com.spotify.music
+package tech.xvanturing.musicdav
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,6 +19,6 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.spotify.music", appContext.packageName)
+        assertEquals("tech.xvanturing.musicdav", appContext.packageName)
     }
 }

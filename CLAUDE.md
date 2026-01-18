@@ -45,17 +45,17 @@ MusicDav is an Android WebDAV music player application built with Jetpack Compos
 ### Core Components
 
 1. **MainActivity**: Entry point that manages navigation between album list and music player screens
-2. **Data Layer** (`com.spotify.music.data`):
+2. **Data Layer** (`tech.xvanturing.musicdav.data`):
    - `Models.kt`: Core data models including `Album`, `WebDavConfig`, `ServerConfig`, `MusicFile`, `PlaylistState`
    - `AlbumsRepository`: Persists albums using SharedPreferences with JSON serialization
    - `ServerConfigRepository`: Manages reusable WebDAV server configurations
    - `PlaylistCache`: Caches music file listings for performance
 
-3. **WebDAV Integration** (`com.spotify.music.webdav`):
+3. **WebDAV Integration** (`tech.xvanturing.musicdav.webdav`):
    - `WebDavClient`: Handles WebDAV operations using Sardine library
    - Supports music file discovery, cover image detection, and connection testing
 
-4. **UI Screens** (`com.spotify.music.ui.screen`):
+4. **UI Screens** (`tech.xvanturing.musicdav.ui.screen`):
    - `AlbumListScreen`: Main screen showing all configured albums
    - `AlbumDetailScreen`: Playback interface with player controls
    - `AlbumCreateForm`: Form for creating new albums with WebDAV configuration
@@ -83,7 +83,7 @@ MusicDav is an Android WebDAV music player application built with Jetpack Compos
 ### File Structure
 
 ```
-app/src/main/java/com/spotify/music/
+app/src/main/java/tech/xvanturing/musicdav/
 ├── MainActivity.kt                 # App entry point and navigation
 ├── SimpleMusicService.kt           # Background music playback service
 ├── data/

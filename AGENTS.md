@@ -46,7 +46,7 @@ Imports are organized alphabetically by package name:
 1. Android/AndroidX imports
 2. Compose imports (androidx.compose.*)
 3. Third-party library imports
-4. Project imports (com.spotify.music.*)
+4. Project imports (tech.xvanturing.musicdav.*)
 5. java/kotlin imports (if needed)
 
 ```kotlin
@@ -54,7 +54,7 @@ import android.app.Activity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
 import coil3.compose.AsyncImage
-import com.spotify.music.data.Album
+import tech.xvanturing.musicdav.data.Album
 import kotlinx.coroutines.Dispatchers
 ```
 
@@ -190,7 +190,7 @@ val coverUrl: String? = embeddedCoverUrl ?: albumCoverUrl
 
 ### Package Structure
 ```
-com.spotify.music/
+tech.xvanturing.musicdav/
 ├── MainActivity.kt
 ├── SimpleMusicService.kt
 ├── data/
@@ -246,7 +246,7 @@ The caching system consists of three main components:
 
 ### CacheManager
 
-**Location**: `com.spotify.music.player.CacheManager`
+**Location**: `tech.xvanturing.musicdav.player.CacheManager`
 
 **Purpose**: 
 - Manages communication with MusicCacheService
@@ -287,7 +287,7 @@ suspend fun isCached(context: Context, url: String): Boolean  // Check if song i
 
 ### MusicCacheService
 
-**Location**: `com.spotify.music.MusicCacheService`
+**Location**: `tech.xvanturing.musicdav.MusicCacheService`
 
 **Purpose**:
 - Foreground service handling cache tasks
@@ -322,7 +322,7 @@ interface CacheTaskListener {
 
 ### MusicCache
 
-**Location**: `com.spotify.music.player.MusicCache`
+**Location**: `tech.xvanturing.musicdav.player.MusicCache`
 
 **Purpose**:
 - Low-level file caching operations
@@ -462,7 +462,7 @@ if (newProgress.completedSongs >= newProgress.totalSongs) {
 ## Testing Guidelines
 
 ### Unit Tests
-- Place in `app/src/test/java/com/spotify/music/`
+- Place in `app/src/test/java/tech/xvanturing/musicdav/`
 - Use JUnit assertions
 - Test pure functions and business logic
 
@@ -476,7 +476,7 @@ fun testParseWebDavBaseUrl_withPath() {
 ```
 
 ### Instrumented Tests
-- Place in `app/src/androidTest/java/com/spotify/music/`
+- Place in `app/src/androidTest/java/tech/xvanturing/musicdav/`
 - Use AndroidX Test framework
 - Test Android-specific components
 
