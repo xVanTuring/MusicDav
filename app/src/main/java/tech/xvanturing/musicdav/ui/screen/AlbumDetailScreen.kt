@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
@@ -29,7 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import android.widget.Toast
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material3.CircularProgressIndicator
 import tech.xvanturing.musicdav.data.Album
 import tech.xvanturing.musicdav.data.ServerConfigRepository
 import tech.xvanturing.musicdav.player.PlaylistStateController
@@ -52,11 +54,14 @@ fun AlbumDetailScreen(
     val coroutineScope = rememberCoroutineScope()
 
     // 存储当前专辑的歌曲列表
-    var currentAlbumSongs by remember { mutableStateOf<List<tech.xvanturing.musicdav.data.MusicFile>>(emptyList()) }
-    var refreshTrigger by remember { mutableIntStateOf(0) }
-    var hasTriedInitialRefresh by remember { mutableStateOf(false) }
+    var currentAlbumSongs by remember {
+        mutableStateOf<List<tech.xvanturing.musicdav.data.MusicFile>>(
+            emptyList()
+        )
+    }
     var isExtractingMetadata by remember { mutableStateOf(false) }
     var metadataExtractionProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var hasTriedInitialRefresh by remember { mutableStateOf(false) }
 
     // 缓存状态
     val cacheManager = remember { CacheManager(context) }
@@ -65,11 +70,6 @@ fun AlbumDetailScreen(
     // 拦截返回键，返回到专辑列表页面
     BackHandler {
         onBack()
-    }
-
-    // 触发刷新函数
-    fun triggerRefresh() {
-        refreshTrigger++
     }
 
     val webDavConfig = if (album.serverConfigId != null) {
@@ -99,7 +99,10 @@ fun AlbumDetailScreen(
             coroutineScope.launch {
                 try {
                     // 先加载缓存数据（如果有）
-                    val cachedFiles = tech.xvanturing.musicdav.data.PlaylistCache.load(context, album.directoryUrl)
+                    val cachedFiles = tech.xvanturing.musicdav.data.PlaylistCache.load(
+                        context,
+                        album.directoryUrl
+                    )
                     if (cachedFiles.isNotEmpty()) {
                         currentAlbumSongs = cachedFiles
                     }
@@ -118,7 +121,11 @@ fun AlbumDetailScreen(
                     }
                         .onSuccess { files ->
                             currentAlbumSongs = files
-                            tech.xvanturing.musicdav.data.PlaylistCache.save(context, album.directoryUrl, files)
+                            tech.xvanturing.musicdav.data.PlaylistCache.save(
+                                context,
+                                album.directoryUrl,
+                                files
+                            )
                             isExtractingMetadata = false
                             metadataExtractionProgress = null
                             Toast.makeText(
@@ -141,7 +148,10 @@ fun AlbumDetailScreen(
                         }
                 } catch (e: Exception) {
                     // 如果已经有缓存数据，显示提示
-                    val cachedFiles = tech.xvanturing.musicdav.data.PlaylistCache.load(context, album.directoryUrl)
+                    val cachedFiles = tech.xvanturing.musicdav.data.PlaylistCache.load(
+                        context,
+                        album.directoryUrl
+                    )
                     if (cachedFiles.isNotEmpty()) {
                         Toast.makeText(
                             context,
@@ -178,29 +188,6 @@ fun AlbumDetailScreen(
                     }
                 },
                 actions = {
-                    if (isExtractingMetadata) {
-                        androidx.compose.material3.AssistChip(
-                            onClick = { },
-                            label = { 
-                                Text(
-                                    "提取元数据: ${metadataExtractionProgress?.first ?: 0}/${metadataExtractionProgress?.second ?: 0}"
-                                )
-                            },
-                            leadingIcon = {
-                                androidx.compose.material3.CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            }
-                        )
-                    }
-                    
-                    IconButton(onClick = { triggerRefresh() }) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh"
-                        )
-                    }
                     IconButton(
                         onClick = {
                             if (currentAlbumSongs.isNotEmpty() && albumCacheProgress == null) {
@@ -230,7 +217,7 @@ fun AlbumDetailScreen(
                         enabled = currentAlbumSongs.isNotEmpty() && albumCacheProgress == null
                     ) {
                         if (albumCacheProgress != null) {
-                            androidx.compose.material3.CircularProgressIndicator(
+                            CircularProgressIndicator(
                                 modifier = Modifier
                                     .size(24.dp),
                                 strokeWidth = 2.dp
@@ -252,73 +239,88 @@ fun AlbumDetailScreen(
             )
         }
     ) { paddingValues ->
-        MusicListScreen(
-            webDavConfig = webDavConfig,
-            directoryPath = album.directoryUrl,
-            showBack = false, // We now have a top bar with back button
-            onBack = onBack,
-            currentPlayingSong = playlistController.state.currentSong,
-            onPlaylistLoaded = { songs ->
-                // 存储当前专辑的歌曲列表，但不自动加载到播放器
-                currentAlbumSongs = songs
-            },
-            enableCache = true,
-            onCacheRequest = { musicFile ->
-                cacheManager.cacheSong(
-                    scope = coroutineScope,
-                    context = context,
-                    musicFile = musicFile,
-                    config = webDavConfig,
-                    onSuccess = { path ->
-                        Toast.makeText(
-                            context,
-                            "Cached: ${musicFile.name}",
-                            Toast.LENGTH_SHORT
-                        ).show()
+        Box(modifier = modifier.padding(paddingValues)) {
+            if (isExtractingMetadata) {
+                AssistChip(
+                    onClick = { },
+                    label = {
+                        Text(
+                            "提取元数据: ${metadataExtractionProgress?.first ?: 0}/${metadataExtractionProgress?.second ?: 0}"
+                        )
                     },
-                    onFailure = { error ->
-                        Toast.makeText(
-                            context,
-                            "Failed to cache: ${error.message}",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                    leadingIcon = {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                    },
+                    modifier = Modifier.align(Alignment.Center)
                 )
-            },
-             onSongSelected = { index, _ ->
-                 coroutineScope.launch {
-                     playlistController.loadPlaylist(currentAlbumSongs)
-                     playlistController.setSongAlbumCovers(currentAlbumSongs, album.coverImageUrl)
-                     playlistController.setCurrentWebDavConfig(webDavConfig)
-                     playlistController.loadCachedCovers(context, currentAlbumSongs)
-                     playlistController.setPlaylistAndPlay(index)
-                 }
-             },
-            bottomBar = {
-                BottomPlayerBar(
-                    playlistState = playlistController.state,
-                    onPlayPause = {
-                        if (playlistController.state.isPlaying) {
-                            playlistController.pause()
-                        } else {
-                            playlistController.play()
+            } else {
+                MusicListScreen(
+                    musicFiles = currentAlbumSongs,
+                    isLoading = false,
+                    errorMessage = null,
+                    currentPlayingSong = playlistController.state.currentSong,
+                    onSongSelected = { index, _ ->
+                        coroutineScope.launch {
+                            playlistController.loadPlaylist(currentAlbumSongs)
+                            playlistController.setSongAlbumCovers(
+                                currentAlbumSongs,
+                                album.coverImageUrl
+                            )
+                            playlistController.setCurrentWebDavConfig(webDavConfig)
+                            playlistController.loadCachedCovers(context, currentAlbumSongs)
+                            playlistController.setPlaylistAndPlay(index)
                         }
                     },
-                    onNext = {
-                        playlistController.seekToNext()
+                    enableCache = true,
+                    onCacheRequest = { musicFile ->
+                        cacheManager.cacheSong(
+                            scope = coroutineScope,
+                            context = context,
+                            musicFile = musicFile,
+                            config = webDavConfig,
+                            onSuccess = { path ->
+                                Toast.makeText(
+                                    context,
+                                    "Cached: ${musicFile.name}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            onFailure = { error ->
+                                Toast.makeText(
+                                    context,
+                                    "Failed to cache: ${error.message}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        )
                     },
-                    onPrevious = {
-                        playlistController.seekToPrevious()
+                    bottomBar = {
+                        BottomPlayerBar(
+                            playlistState = playlistController.state,
+                            onPlayPause = {
+                                if (playlistController.state.isPlaying) {
+                                    playlistController.pause()
+                                } else {
+                                    playlistController.play()
+                                }
+                            },
+                            onNext = {
+                                playlistController.seekToNext()
+                            },
+                            onPrevious = {
+                                playlistController.seekToPrevious()
+                            },
+                            onTogglePlayMode = {
+                                playlistController.togglePlayMode()
+                            }
+                        )
                     },
-                    onTogglePlayMode = {
-                        playlistController.togglePlayMode()
-                    }
+                    cacheManager = cacheManager
                 )
-            },
-            modifier = modifier.padding(paddingValues),
-            showTopBar = false, // Hide MusicListScreen's top bar
-            externalRefreshTrigger = { refreshTrigger }, // Pass refresh trigger value
-            cacheManager = cacheManager
-        )
+            }
+        }
     }
 }

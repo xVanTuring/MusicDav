@@ -10,10 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -21,239 +18,50 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.MoreVert
 import tech.xvanturing.musicdav.data.MusicFile
-import tech.xvanturing.musicdav.data.WebDavConfig
-import tech.xvanturing.musicdav.webdav.WebDavClient
 import tech.xvanturing.musicdav.player.MusicCache
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MusicListScreen(
-    webDavConfig: WebDavConfig,
-    directoryPath: String? = null,
-    showBack: Boolean = false,
-    onBack: () -> Unit = {},
+    musicFiles: List<MusicFile>,
+    isLoading: Boolean,
+    errorMessage: String?,
     currentPlayingSong: MusicFile? = null,
     onSongSelected: (Int, MusicFile) -> Unit,
-    onPlaylistLoaded: (List<MusicFile>) -> Unit = {},
     bottomBar: @Composable () -> Unit,
     modifier: Modifier = Modifier,
-    showTopBar: Boolean = true,
-    externalRefreshTrigger: (() -> Unit)? = null,
     enableCache: Boolean = false,
     onCacheRequest: (MusicFile) -> Unit = {},
     cacheManager: tech.xvanturing.musicdav.player.CacheManager? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var musicFiles by remember { mutableStateOf<List<MusicFile>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(false) }
-    var isRefreshing by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var refreshKey by remember { mutableStateOf(0) }
-    
-    val scope = rememberCoroutineScope()
-    val webDavClient = remember { WebDavClient() }
-    
-    // 如果有 directoryPath，拼接完整路径；否则使用原始 URL
-    val effectiveConfig = remember(webDavConfig, directoryPath) {
-        if (directoryPath != null) {
-            webDavConfig.copy(url = directoryPath)
-        } else {
-            webDavConfig
-        }
-    }
-    
-    // 响应外部刷新触发器
-    LaunchedEffect(externalRefreshTrigger) {
-        externalRefreshTrigger?.invoke()
-        refreshKey++
-    }
 
-    // 响应刷新键变化
-    LaunchedEffect(refreshKey) {
-        if (refreshKey > 0) {
-            isRefreshing = true
-        errorMessage = null
-        scope.launch {
-            webDavClient.fetchMusicFiles(effectiveConfig, context) { _, _ -> }
-                .onSuccess { files ->
-                        musicFiles = files
-                        tech.xvanturing.musicdav.data.PlaylistCache.save(context, directoryPath, files)
-                        onPlaylistLoaded(files)
-                        isRefreshing = false
-                    }
-                    .onFailure { e ->
-                        errorMessage = "Failed to load music: ${e.message}"
-                        isRefreshing = false
-                    }
-            }
-        }
-    }
-
-    // 首次加载：先显示缓存，然后后台更新
-    LaunchedEffect(effectiveConfig.url) {
-        // 先加载缓存并立即显示
-        val cachedFiles = tech.xvanturing.musicdav.data.PlaylistCache.load(context, directoryPath)
-        if (cachedFiles.isNotEmpty()) {
-            musicFiles = cachedFiles
-            // 通知播放列表已加载（使用缓存）
-            onPlaylistLoaded(cachedFiles)
-            // 有缓存时，后台刷新不显示加载状态
-            isRefreshing = true
-        } else {
-            // 没有缓存时，显示加载状态
-            isLoading = true
-        }
-        
-        errorMessage = null
-        scope.launch {
-            webDavClient.fetchMusicFiles(effectiveConfig, context) { _, _ -> }
-                .onSuccess { files ->
-                    // 检查数据是否不同
-                    val cachedUrls = cachedFiles.map { it.url }.toSet()
-                    val newUrls = files.map { it.url }.toSet()
-                    
-                    if (cachedUrls != newUrls) {
-                        // 数据不同，更新UI和缓存
-                        musicFiles = files
-                        tech.xvanturing.musicdav.data.PlaylistCache.save(context, directoryPath, files)
-                        // 通知播放列表已更新（但不影响当前播放）
-                        onPlaylistLoaded(files)
-                    } else {
-                        // URL列表相同，但元数据可能有变化，更新UI和缓存
-                        musicFiles = files
-                        tech.xvanturing.musicdav.data.PlaylistCache.save(context, directoryPath, files)
-                        // 通知播放列表已更新（但不影响当前播放，因为URL相同）
-                        onPlaylistLoaded(files)
-                    }
-                    isLoading = false
-                    isRefreshing = false
-                }
-                .onFailure { e ->
-                    // 如果加载失败，保持缓存数据，只显示错误（如果有缓存）
-                    if (cachedFiles.isEmpty()) {
-                        errorMessage = "Failed to load music: ${e.message}"
-                    }
-                    isLoading = false
-                    isRefreshing = false
-                }
-        }
-    }
-    
-    fun loadMusicFiles(showLoading: Boolean = false) {
-        if (showLoading) {
-            isLoading = true
-        } else {
-            isRefreshing = true
-        }
-        errorMessage = null
-        scope.launch {
-            webDavClient.fetchMusicFiles(effectiveConfig, context) { _, _ -> }
-                .onSuccess { files ->
-                    musicFiles = files
-                    tech.xvanturing.musicdav.data.PlaylistCache.save(context, directoryPath, files)
-                    onPlaylistLoaded(files)
-                    isLoading = false
-                    isRefreshing = false
-                }
-                .onFailure { e ->
-                    errorMessage = "Failed to load music: ${e.message}"
-                    isLoading = false
-                    isRefreshing = false
-                }
-        }
-    }
-    
-      if (showTopBar) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("Music Library") },
-                    navigationIcon = if (showBack) {
-                        {
-                            IconButton(onClick = onBack) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                            }
-                        }
-                    } else {
-                        {}
-                    },
-                    actions = {
-                        if (isRefreshing) {
-                            Box(
-                                modifier = Modifier.padding(16.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            }
-                        }
-                        IconButton(onClick = {
-                            refreshKey++
-                        }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                        }
-                    }
-                )
-            },
-            bottomBar = bottomBar,
-            modifier = modifier
-        ) { paddingValues ->
-            Content(
-                paddingValues = paddingValues,
-                isLoading = isLoading,
-                errorMessage = errorMessage,
-                musicFiles = musicFiles,
-                currentPlayingSong = currentPlayingSong,
-                onSongSelected = onSongSelected,
-                enableCache = enableCache,
-                onCacheRequest = onCacheRequest,
-                context = context,
-                cacheManager = cacheManager
-            )
-        }
-    } else {
-        Scaffold(
-            bottomBar = bottomBar,
-            modifier = modifier
-        ) { paddingValues ->
-            Content(
-                paddingValues = paddingValues,
-                isLoading = isLoading,
-                errorMessage = errorMessage,
-                musicFiles = musicFiles,
-                currentPlayingSong = currentPlayingSong,
-                onSongSelected = onSongSelected,
-                enableCache = enableCache,
-                onCacheRequest = onCacheRequest,
-                context = context,
-                cacheManager = cacheManager
-            )
-        }
+    Scaffold(
+        bottomBar = bottomBar,
+        modifier = modifier
+    ) { paddingValues ->
+        Content(
+            paddingValues = paddingValues,
+            isLoading = isLoading,
+            errorMessage = errorMessage,
+            musicFiles = musicFiles,
+            currentPlayingSong = currentPlayingSong,
+            onSongSelected = onSongSelected,
+            enableCache = enableCache,
+            onCacheRequest = onCacheRequest,
+            context = context,
+            cacheManager = cacheManager
+        )
     }
 }
 
