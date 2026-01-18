@@ -61,6 +61,7 @@ fun ServerConfigListScreen(
     onCreate: () -> Unit,
     onEdit: (ServerConfig) -> Unit = {},
     refreshKey: Int = 0,
+    onImportSuccess: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -296,6 +297,7 @@ fun ServerConfigListScreen(
                                                 importResult = it
                                                 showImportStrategyDialog = false
                                                 configs = ServerConfigRepository.load(context)
+                                                onImportSuccess()
                                                 showResultDialog = true
                                             }.onFailure { e ->
                                                 exportMessage = "导入失败: ${e.message}"
@@ -320,6 +322,7 @@ fun ServerConfigListScreen(
                                                 importResult = it
                                                 showImportStrategyDialog = false
                                                 configs = ServerConfigRepository.load(context)
+                                                onImportSuccess()
                                                 showResultDialog = true
                                             }.onFailure { e ->
                                                 exportMessage = "导入失败: ${e.message}"
@@ -344,6 +347,7 @@ fun ServerConfigListScreen(
                                                 importResult = it
                                                 showImportStrategyDialog = false
                                                 configs = ServerConfigRepository.load(context)
+                                                onImportSuccess()
                                                 showResultDialog = true
                                             }.onFailure { e ->
                                                 exportMessage = "导入失败: ${e.message}"

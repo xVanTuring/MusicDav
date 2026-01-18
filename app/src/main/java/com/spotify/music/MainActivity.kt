@@ -147,6 +147,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     } else if (selectedAlbum == null) {
         MainTabScreen(
             albums = albums,
+            onRefreshAlbums = { albums = com.spotify.music.data.AlbumsRepository.load(context) },
             onSelectAlbum = { selectedAlbum = it },
             onCreateAlbum = { album, serverConfigId ->
                 val updated = albums + album
@@ -193,6 +194,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
 @Composable
 fun MainTabScreen(
     albums: List<com.spotify.music.data.Album>,
+    onRefreshAlbums: () -> Unit,
     onSelectAlbum: (com.spotify.music.data.Album) -> Unit,
     onCreateAlbum: (com.spotify.music.data.Album, String?) -> Unit,
     onDeleteAlbum: (com.spotify.music.data.Album) -> Unit,
@@ -341,6 +343,7 @@ fun MainTabScreen(
                         },
                         onDelete = onDeleteAlbum,
                         onAddButtonClick = { creatingAlbum = true },
+                        onImportSuccess = { onRefreshAlbums() },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -349,6 +352,7 @@ fun MainTabScreen(
                         onCreate = { creatingServerConfig = true },
                         onEdit = { config -> editingServerConfig = config },
                         refreshKey = serverConfigsRefreshKey,
+                        onImportSuccess = { onRefreshAlbums() },
                         modifier = Modifier.fillMaxSize()
                     )
                 }

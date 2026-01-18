@@ -82,6 +82,7 @@ fun AlbumListScreen(
     onCreate: (Album, String?) -> Unit,
     onDelete: (Album) -> Unit,
     onAddButtonClick: (() -> Unit)? = null,
+    onImportSuccess: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -311,6 +312,7 @@ fun AlbumListScreen(
                                                 result.onSuccess {
                                                     importResult = it
                                                     showImportStrategyDialog = false
+                                                    onImportSuccess()
                                                     showResultDialog = true
                                                 }.onFailure { e ->
                                                     exportMessage = "导入失败: ${e.message}"
@@ -338,6 +340,7 @@ fun AlbumListScreen(
                                                 result.onSuccess {
                                                     importResult = it
                                                     showImportStrategyDialog = false
+                                                    onImportSuccess()
                                                     showResultDialog = true
                                                 }.onFailure { e ->
                                                     exportMessage = "导入失败: ${e.message}"
@@ -365,6 +368,7 @@ fun AlbumListScreen(
                                                 result.onSuccess {
                                                     importResult = it
                                                     showImportStrategyDialog = false
+                                                    onImportSuccess()
                                                     showResultDialog = true
                                                 }.onFailure { e ->
                                                     exportMessage = "导入失败: ${e.message}"
