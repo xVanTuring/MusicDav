@@ -1,5 +1,6 @@
 package tech.xvanturing.musicdav
 
+import android.content.Context
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -38,15 +39,23 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.mutableLongStateOf
-import tech.xvanturing.musicdav.data.getWebDavConfig
+import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.inspector.MetadataRetriever
+import kotlinx.coroutines.guava.await
+import kotlinx.coroutines.launch
+import okhttp3.Credentials
+import tech.xvanturing.musicdav.player.CoverCache
+import kotlin.use
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // 打印已保存的配置信息
-        // printConfigurations()
 
         setContent {
             MusicDavTheme {
@@ -56,10 +65,17 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+
 @Composable
 fun MusicPlayerApp(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var albums by remember { mutableStateOf(tech.xvanturing.musicdav.data.AlbumsRepository.load(context)) }
+    var albums by remember {
+        mutableStateOf(
+            tech.xvanturing.musicdav.data.AlbumsRepository.load(
+                context
+            )
+        )
+    }
     var selectedAlbum by remember { mutableStateOf<tech.xvanturing.musicdav.data.Album?>(null) }
     var editingAlbum by remember { mutableStateOf<tech.xvanturing.musicdav.data.Album?>(null) }
     val playlistController = rememberPlaylistStateController()
@@ -77,7 +93,11 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
         } else {
             // 第一次点击，显示提示
             lastBackPressTime = currentTime
-            android.widget.Toast.makeText(context, "再按一次退出应用", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(
+                context,
+                "再按一次退出应用",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -86,7 +106,11 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
         AlbumCreateForm(
             onCancel = { editingAlbum = null },
             onSave = { name, url, username, password, directoryUrl, coverImageUrl, serverConfigId ->
-                val config = tech.xvanturing.musicdav.data.WebDavConfig(url = url, username = username, password = password)
+                val config = tech.xvanturing.musicdav.data.WebDavConfig(
+                    url = url,
+                    username = username,
+                    password = password
+                )
                 val updatedAlbum = editingAlbum!!.copy(
                     name = name,
                     config = config,
@@ -109,7 +133,9 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     } else if (selectedAlbum == null) {
         MainTabScreen(
             albums = albums,
-            onRefreshAlbums = { albums = tech.xvanturing.musicdav.data.AlbumsRepository.load(context) },
+            onRefreshAlbums = {
+                albums = tech.xvanturing.musicdav.data.AlbumsRepository.load(context)
+            },
             onSelectAlbum = { selectedAlbum = it },
             onCreateAlbum = { album, serverConfigId ->
                 val updated = albums + album
@@ -166,7 +192,11 @@ fun MainTabScreen(
     var selectedTabIndex by remember { mutableStateOf(0) }
     var creatingAlbum by remember { mutableStateOf(false) }
     var creatingServerConfig by remember { mutableStateOf(false) }
-    var editingServerConfig by remember { mutableStateOf<tech.xvanturing.musicdav.data.ServerConfig?>(null) }
+    var editingServerConfig by remember {
+        mutableStateOf<tech.xvanturing.musicdav.data.ServerConfig?>(
+            null
+        )
+    }
     var serverConfigsRefreshKey by remember { mutableStateOf(0) }
     val context = LocalContext.current
 
@@ -186,7 +216,11 @@ fun MainTabScreen(
         AlbumCreateForm(
             onCancel = { creatingAlbum = false },
             onSave = { name, url, username, password, directoryUrl, coverImageUrl, serverConfigId ->
-                val config = tech.xvanturing.musicdav.data.WebDavConfig(url = url, username = username, password = password)
+                val config = tech.xvanturing.musicdav.data.WebDavConfig(
+                    url = url,
+                    username = username,
+                    password = password
+                )
                 val album = tech.xvanturing.musicdav.data.Album(
                     id = java.util.UUID.randomUUID().toString(),
                     name = name,
@@ -311,6 +345,7 @@ fun MainTabScreen(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
+
                 1 -> {
                     ServerConfigListScreen(
                         onCreate = { creatingServerConfig = true },
@@ -320,6 +355,7 @@ fun MainTabScreen(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
+
                 2 -> {
                     CacheManagementScreen(
                         modifier = Modifier.fillMaxSize()

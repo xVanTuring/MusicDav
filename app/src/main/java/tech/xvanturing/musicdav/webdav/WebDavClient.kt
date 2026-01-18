@@ -1,28 +1,30 @@
 package tech.xvanturing.musicdav.webdav
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.util.Log
 import tech.xvanturing.musicdav.data.MusicFile
 import tech.xvanturing.musicdav.data.MusicMetadataCache
 import tech.xvanturing.musicdav.data.WebDavConfig
+import tech.xvanturing.musicdav.data.extractMusicMetadata
+import tech.xvanturing.musicdav.player.CoverCache
 import com.thegrizzlylabs.sardineandroid.DavResource
 import com.thegrizzlylabs.sardineandroid.Sardine
 import com.thegrizzlylabs.sardineandroid.impl.OkHttpSardine
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.io.ByteArrayOutputStream
-import java.util.concurrent.TimeUnit
 
 class WebDavClient {
     
     private val musicExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "aac", "wma")
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp")
     
-    suspend fun fetchMusicFiles(config: WebDavConfig, context: Context): Result<List<MusicFile>> = withContext(Dispatchers.IO) {
+    suspend fun fetchMusicFiles(
+        config: WebDavConfig,
+        context: Context,
+        onProgress: (Int, Int) -> Unit = { _, _ -> }
+    ): Result<List<MusicFile>> = withContext(Dispatchers.IO) {
         try {
             val sardine: Sardine = OkHttpSardine()
             sardine.setCredentials(config.username, config.password)
@@ -48,10 +50,42 @@ class WebDavClient {
                 }
                 .sortedBy { it.name }
 
+            Log.d("WebDavClient", "Found ${musicFiles.size} music files")
+
             val metadataMap = MusicMetadataCache.getBatch(context, musicFiles.map { it.url })
+            val filesWithoutMetadata = musicFiles.filter { !metadataMap.containsKey(it.url) }
+
+            Log.d("WebDavClient", "Cached metadata: ${metadataMap.size}, Need extraction: ${filesWithoutMetadata.size}")
+
+            if (filesWithoutMetadata.isNotEmpty()) {
+                for ((index, file) in filesWithoutMetadata.withIndex()) {
+                    onProgress(index + 1, filesWithoutMetadata.size)
+                    try {
+                        val extractedMetadata = extractMusicMetadata(context, file, config)
+                        val cachedMetadata = tech.xvanturing.musicdav.data.CachedMetadata(
+                            url = file.url,
+                            title = extractedMetadata.title,
+                            artist = extractedMetadata.artist,
+                            album = extractedMetadata.album,
+                            durationMs = extractedMetadata.durationMs
+                        )
+                        MusicMetadataCache.save(context, cachedMetadata)
+                        
+                        extractedMetadata.coverArt?.let { coverArt ->
+                            launch {
+                                CoverCache.saveCover(context, file.url, coverArt.imageData, coverArt.mimeType)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("WebDavClient", "Failed to extract metadata for ${file.name}", e)
+                    }
+                }
+            }
+
+            val updatedMetadataMap = MusicMetadataCache.getBatch(context, musicFiles.map { it.url })
 
             val enrichedMusicFiles = musicFiles.map { file ->
-                metadataMap[file.url]?.let { metadata ->
+                updatedMetadataMap[file.url]?.let { metadata ->
                     file.copy(
                         title = metadata.title,
                         artist = metadata.artist,

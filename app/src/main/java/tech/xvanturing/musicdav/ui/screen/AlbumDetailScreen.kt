@@ -9,6 +9,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +55,8 @@ fun AlbumDetailScreen(
     var currentAlbumSongs by remember { mutableStateOf<List<tech.xvanturing.musicdav.data.MusicFile>>(emptyList()) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     var hasTriedInitialRefresh by remember { mutableStateOf(false) }
+    var isExtractingMetadata by remember { mutableStateOf(false) }
+    var metadataExtractionProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     // 缓存状态
     val cacheManager = remember { CacheManager(context) }
@@ -101,7 +104,7 @@ fun AlbumDetailScreen(
                         currentAlbumSongs = cachedFiles
                     }
 
-                    // 尝试获取最新数据
+                    // 尝试获取最新数据并提取元数据
                     val webDavClient = tech.xvanturing.musicdav.webdav.WebDavClient()
                     val effectiveConfig = if (album.directoryUrl != null) {
                         webDavConfig.copy(url = album.directoryUrl)
@@ -109,10 +112,20 @@ fun AlbumDetailScreen(
                         webDavConfig
                     }
 
-                    webDavClient.fetchMusicFiles(effectiveConfig, context)
+                    webDavClient.fetchMusicFiles(effectiveConfig, context) { current, total ->
+                        metadataExtractionProgress = current to total
+                        isExtractingMetadata = true
+                    }
                         .onSuccess { files ->
                             currentAlbumSongs = files
                             tech.xvanturing.musicdav.data.PlaylistCache.save(context, album.directoryUrl, files)
+                            isExtractingMetadata = false
+                            metadataExtractionProgress = null
+                            Toast.makeText(
+                                context,
+                                "已加载 ${files.size} 首歌曲",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                         .onFailure { e ->
                             // 如果已经有缓存数据，显示提示
@@ -123,6 +136,8 @@ fun AlbumDetailScreen(
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
+                            isExtractingMetadata = false
+                            metadataExtractionProgress = null
                         }
                 } catch (e: Exception) {
                     // 如果已经有缓存数据，显示提示
@@ -134,6 +149,8 @@ fun AlbumDetailScreen(
                             Toast.LENGTH_SHORT
                         ).show()
                     }
+                    isExtractingMetadata = false
+                    metadataExtractionProgress = null
                 }
             }
         }
@@ -161,6 +178,23 @@ fun AlbumDetailScreen(
                     }
                 },
                 actions = {
+                    if (isExtractingMetadata) {
+                        androidx.compose.material3.AssistChip(
+                            onClick = { },
+                            label = { 
+                                Text(
+                                    "提取元数据: ${metadataExtractionProgress?.first ?: 0}/${metadataExtractionProgress?.second ?: 0}"
+                                )
+                            },
+                            leadingIcon = {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                        )
+                    }
+                    
                     IconButton(onClick = { triggerRefresh() }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,

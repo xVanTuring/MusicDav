@@ -97,7 +97,7 @@ fun MusicListScreen(
             isRefreshing = true
         errorMessage = null
         scope.launch {
-            webDavClient.fetchMusicFiles(effectiveConfig, context)
+            webDavClient.fetchMusicFiles(effectiveConfig, context) { _, _ -> }
                 .onSuccess { files ->
                         musicFiles = files
                         tech.xvanturing.musicdav.data.PlaylistCache.save(context, directoryPath, files)
@@ -129,7 +129,7 @@ fun MusicListScreen(
         
         errorMessage = null
         scope.launch {
-            webDavClient.fetchMusicFiles(effectiveConfig, context)
+            webDavClient.fetchMusicFiles(effectiveConfig, context) { _, _ -> }
                 .onSuccess { files ->
                     // 检查数据是否不同
                     val cachedUrls = cachedFiles.map { it.url }.toSet()
@@ -170,7 +170,7 @@ fun MusicListScreen(
         }
         errorMessage = null
         scope.launch {
-            webDavClient.fetchMusicFiles(effectiveConfig, context)
+            webDavClient.fetchMusicFiles(effectiveConfig, context) { _, _ -> }
                 .onSuccess { files ->
                     musicFiles = files
                     tech.xvanturing.musicdav.data.PlaylistCache.save(context, directoryPath, files)

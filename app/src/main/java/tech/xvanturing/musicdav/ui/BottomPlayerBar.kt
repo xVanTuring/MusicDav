@@ -172,25 +172,17 @@ fun BottomPlayerBar(
                                  }
                              }
                          }
-                     } else {
-                        // Default music note icon when no cover
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant,
-                                    RoundedCornerShape(8.dp)
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MusicNote,
-                                contentDescription = "Default Album",
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                      } else {
+                         // Default placeholder when no cover
+                         Box(
+                             modifier = Modifier
+                                 .size(48.dp)
+                                 .clip(RoundedCornerShape(8.dp))
+                                 .background(
+                                     MaterialTheme.colorScheme.surfaceVariant,
+                                     RoundedCornerShape(8.dp)
+                                 )
+                         )
                     }
 
                     // Song info

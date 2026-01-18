@@ -11,7 +11,7 @@ import java.security.NoSuchAlgorithmException
 object CoverCache {
     private const val CACHE_DIR = "music_covers"
 
-    suspend fun saveCover(context: Context, url: String, data: ByteArray): String? {
+    suspend fun saveCover(context: Context, url: String, data: ByteArray, mimeType: String): String? {
         return withContext(Dispatchers.IO) {
             try {
                 val cacheDir = File(context.cacheDir, CACHE_DIR)
@@ -19,11 +19,12 @@ object CoverCache {
                     cacheDir.mkdirs()
                 }
 
-                val fileName = "${sha256(url)}.jpg"
+                val extension = mimeTypeToExtension(mimeType)
+                val fileName = "${sha256(url)}.$extension"
                 val cacheFile = File(cacheDir, fileName)
 
                 cacheFile.writeBytes(data)
-                Log.d("CoverCache", "Cover saved to cache: ${cacheFile.absolutePath}")
+                Log.d("CoverCache", "Cover saved to cache: ${cacheFile.absolutePath}, type: $mimeType")
                 cacheFile.absolutePath
             } catch (e: Exception) {
                 Log.e("CoverCache", "Failed to save cover for $url", e)
@@ -39,16 +40,20 @@ object CoverCache {
             return null
         }
 
-        val fileName = "${sha256(url)}.jpg"
-        val cacheFile = File(cacheDir, fileName)
-        val exists = cacheFile.exists()
-        Log.d("CoverCache", "Checking cache for URL: ${url.takeLast(30)}, file: $fileName, exists: $exists")
+        val extensions = listOf("jpg", "jpeg", "png", "webp")
+        val baseName = sha256(url)
 
-        return if (exists) {
-            cacheFile.absolutePath
-        } else {
-            null
+        for (ext in extensions) {
+            val fileName = "$baseName.$ext"
+            val cacheFile = File(cacheDir, fileName)
+            if (cacheFile.exists()) {
+                Log.d("CoverCache", "Found cached cover for URL: ${url.takeLast(30)}, file: $fileName")
+                return cacheFile.absolutePath
+            }
         }
+
+        Log.d("CoverCache", "No cached cover found for URL: ${url.takeLast(30)}")
+        return null
     }
 
     fun clear(context: Context) {
@@ -71,6 +76,17 @@ object CoverCache {
         } catch (e: NoSuchAlgorithmException) {
             Log.e("CoverCache", "SHA-256 algorithm not available", e)
             return input.hashCode().toString()
+        }
+    }
+
+    private fun mimeTypeToExtension(mimeType: String): String {
+        return when (mimeType.lowercase()) {
+            "image/jpeg" -> "jpg"
+            "image/jpg" -> "jpg"
+            "image/png" -> "png"
+            "image/webp" -> "webp"
+            "image/gif" -> "gif"
+            else -> "jpg"
         }
     }
 }

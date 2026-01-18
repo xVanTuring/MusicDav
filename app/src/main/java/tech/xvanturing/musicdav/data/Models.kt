@@ -68,37 +68,27 @@ enum class PlayMode {
     val currentSong: MusicFile?
         get() = songs.getOrNull(currentIndex)
 
-    // 获取当前歌曲的封面URL，优先级：缓存封面 > 内嵌封面 > 专辑封面
-    // 如果正在加载元数据，返回null以显示占位符
+    // 获取当前歌曲的封面URL，优先级：缓存封面 > 内嵌封面 > 专辑封面 > 默认占位符
     val currentCoverUrl: String?
         get() {
             val currentSong = currentSong ?: return null
 
-            // 优先级 1: 缓存的本地封面文件（即使在加载元数据时也可以使用）
+            // 优先级 1: 缓存的本地封面文件
             cachedCoverMap[currentSong.url]?.let {
-//                android.util.Log.d("PlaylistState", "使用缓存封面: ${currentSong.name}")
                 return it
-            }
-
-            // 如果正在加载元数据且没有缓存，返回null
-            if (isLoadingMetadata) {
-//                android.util.Log.d("PlaylistState", "正在加载元数据且无缓存，返回null: ${currentSong.name}")
-                return null
             }
 
             // 优先级 2: 当前播放器提取的内嵌封面
             currentEmbeddedCoverUrl?.let {
-//                android.util.Log.d("PlaylistState", "使用内嵌封面: ${currentSong.name}")
                 return it
             }
 
             // 优先级 3: 专辑封面
             songToAlbumCoverMap[currentSong.url]?.let {
-                android.util.Log.d("PlaylistState", "使用专辑封面: ${currentSong.name}")
                 return it
             }
 
-//            android.util.Log.d("PlaylistState", "无封面可用: ${currentSong.name}")
+            // 优先级 4: 无封面可用，返回 null 显示默认占位符
             return null
         }
 
