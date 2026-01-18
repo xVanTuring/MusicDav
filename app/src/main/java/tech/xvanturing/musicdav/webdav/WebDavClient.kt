@@ -1,8 +1,10 @@
 package tech.xvanturing.musicdav.webdav
 
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.util.Log
 import tech.xvanturing.musicdav.data.MusicFile
+import tech.xvanturing.musicdav.data.MusicMetadataCache
 import tech.xvanturing.musicdav.data.WebDavConfig
 import com.thegrizzlylabs.sardineandroid.DavResource
 import com.thegrizzlylabs.sardineandroid.Sardine
@@ -20,14 +22,14 @@ class WebDavClient {
     private val musicExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "aac", "wma")
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp")
     
-    suspend fun fetchMusicFiles(config: WebDavConfig): Result<List<MusicFile>> = withContext(Dispatchers.IO) {
+    suspend fun fetchMusicFiles(config: WebDavConfig, context: Context): Result<List<MusicFile>> = withContext(Dispatchers.IO) {
         try {
             val sardine: Sardine = OkHttpSardine()
             sardine.setCredentials(config.username, config.password)
-            
+
             val normalizedUrl = config.url.trimEnd('/')
             val resources = sardine.list(normalizedUrl)
-            
+
             val musicFiles = resources
                 .filter { !it.isDirectory }
                 .filter { resource ->
@@ -45,8 +47,21 @@ class WebDavClient {
                     )
                 }
                 .sortedBy { it.name }
-            
-            Result.success(musicFiles)
+
+            val metadataMap = MusicMetadataCache.getBatch(context, musicFiles.map { it.url })
+
+            val enrichedMusicFiles = musicFiles.map { file ->
+                metadataMap[file.url]?.let { metadata ->
+                    file.copy(
+                        title = metadata.title,
+                        artist = metadata.artist,
+                        album = metadata.album,
+                        durationMs = metadata.durationMs
+                    )
+                } ?: file
+            }
+
+            Result.success(enrichedMusicFiles)
         } catch (e: Exception) {
             Result.failure(e)
         }

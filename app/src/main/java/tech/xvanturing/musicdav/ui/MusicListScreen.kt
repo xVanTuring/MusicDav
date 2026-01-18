@@ -22,6 +22,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -93,10 +95,10 @@ fun MusicListScreen(
     LaunchedEffect(refreshKey) {
         if (refreshKey > 0) {
             isRefreshing = true
-            errorMessage = null
-            scope.launch {
-                webDavClient.fetchMusicFiles(effectiveConfig)
-                    .onSuccess { files ->
+        errorMessage = null
+        scope.launch {
+            webDavClient.fetchMusicFiles(effectiveConfig, context)
+                .onSuccess { files ->
                         musicFiles = files
                         tech.xvanturing.musicdav.data.PlaylistCache.save(context, directoryPath, files)
                         onPlaylistLoaded(files)
@@ -127,7 +129,7 @@ fun MusicListScreen(
         
         errorMessage = null
         scope.launch {
-            webDavClient.fetchMusicFiles(effectiveConfig)
+            webDavClient.fetchMusicFiles(effectiveConfig, context)
                 .onSuccess { files ->
                     // 检查数据是否不同
                     val cachedUrls = cachedFiles.map { it.url }.toSet()
@@ -168,7 +170,7 @@ fun MusicListScreen(
         }
         errorMessage = null
         scope.launch {
-            webDavClient.fetchMusicFiles(effectiveConfig)
+            webDavClient.fetchMusicFiles(effectiveConfig, context)
                 .onSuccess { files ->
                     musicFiles = files
                     tech.xvanturing.musicdav.data.PlaylistCache.save(context, directoryPath, files)
@@ -348,11 +350,24 @@ fun MusicListItem(
 
     ListItem(
         headlineContent = {
-            Text(
-                text = musicFile.name.substringBeforeLast('.'),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Column {
+                Text(
+                    text = musicFile.displayName,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                musicFile.artist?.let { artist ->
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = artist,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         },
         supportingContent = {
             Text(

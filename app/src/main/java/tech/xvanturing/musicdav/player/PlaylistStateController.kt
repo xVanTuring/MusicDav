@@ -6,10 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -18,7 +15,9 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import tech.xvanturing.musicdav.SimpleMusicService
+import tech.xvanturing.musicdav.data.CachedMetadata
 import tech.xvanturing.musicdav.data.MusicFile
+import tech.xvanturing.musicdav.data.MusicMetadataCache
 import tech.xvanturing.musicdav.data.PlaylistState
 import tech.xvanturing.musicdav.data.PlayMode
 import tech.xvanturing.musicdav.data.WebDavConfig
@@ -28,7 +27,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicReference
 import androidx.compose.ui.platform.LocalContext
 
@@ -114,42 +112,70 @@ import androidx.compose.ui.platform.LocalContext
                     }
 
                      override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
-                         val artworkUri = mediaMetadata.artworkUri
-                         val artworkData = mediaMetadata.artworkData
-                         val currentSong = _state.value.currentSong
+                          val artworkUri = mediaMetadata.artworkUri
+                          val artworkData = mediaMetadata.artworkData
+                          val currentSong = _state.value.currentSong
 
                          if (currentSong != null) {
-                              if (artworkUri != null) {
-                                  Log.d("PlaylistStateController", "内嵌封面加载完成: artworkUri=${artworkUri}")
-                                  metadataLoadTimeoutJob?.cancel()
-                                  _state.value = _state.value.copy(
-                                      currentEmbeddedCoverUrl = artworkUri.toString(),
-                                      isLoadingMetadata = false,
-                                      cachedCoverMap = _state.value.cachedCoverMap
+                              val title = mediaMetadata.title?.toString()
+                              val artist = mediaMetadata.artist?.toString()
+                              val album = mediaMetadata.albumTitle?.toString()
+                              val duration = mediaMetadata.durationMs ?: 0L
+
+                              if (title != null || artist != null) {
+                                  val cachedMetadata = CachedMetadata(
+                                      url = currentSong.url,
+                                      title = title,
+                                      artist = artist,
+                                      album = album,
+                                      durationMs = duration
                                   )
-                              } else if (artworkData != null && artworkData.isNotEmpty()) {
-                                  val base64Cover = android.util.Base64.encodeToString(artworkData, android.util.Base64.NO_WRAP)
-                                  val mimeType = "image/jpeg"
-                                  Log.d("PlaylistStateController", "内嵌封面加载完成: artworkData size=${artworkData.size}, type=$mimeType")
+                                  MusicMetadataCache.save(context, cachedMetadata)
 
-                                  metadataLoadTimeoutJob?.cancel()
-
-                                  _state.value = _state.value.copy(
-                                      currentEmbeddedCoverUrl = "data:$mimeType;base64,$base64Cover",
-                                      isLoadingMetadata = false,
-                                      cachedCoverMap = _state.value.cachedCoverMap
-                                  )
-
-                                  context?.let { ctx ->
-                                      kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                                          CoverCache.saveCover(ctx, currentSong.url, artworkData)
+                                  val updatedSongs = _state.value.songs.map { song ->
+                                      if (song.url == currentSong.url) {
+                                          song.copy(
+                                              title = title,
+                                              artist = artist,
+                                              album = album,
+                                              durationMs = duration
+                                          )
+                                      } else {
+                                          song
                                       }
                                   }
-                              } else {
-                                  Log.d("PlaylistStateController", "元数据变化但无封面数据，继续等待")
+                                  _state.value = _state.value.copy(songs = updatedSongs)
                               }
-                         }
-                     }
+
+                               if (artworkUri != null) {
+                                   Log.d("PlaylistStateController", "内嵌封面加载完成: artworkUri=${artworkUri}")
+                                   metadataLoadTimeoutJob?.cancel()
+                                   _state.value = _state.value.copy(
+                                       currentEmbeddedCoverUrl = artworkUri.toString(),
+                                       isLoadingMetadata = false,
+                                       cachedCoverMap = _state.value.cachedCoverMap
+                                   )
+                               } else if (artworkData != null && artworkData.isNotEmpty()) {
+                                   val base64Cover = android.util.Base64.encodeToString(artworkData, android.util.Base64.NO_WRAP)
+                                   val mimeType = "image/jpeg"
+                                   Log.d("PlaylistStateController", "内嵌封面加载完成: artworkData size=${artworkData.size}, type=$mimeType")
+
+                                   metadataLoadTimeoutJob?.cancel()
+
+                                   _state.value = _state.value.copy(
+                                       currentEmbeddedCoverUrl = "data:$mimeType;base64,$base64Cover",
+                                       isLoadingMetadata = false,
+                                       cachedCoverMap = _state.value.cachedCoverMap
+                                   )
+
+                                   kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                                       CoverCache.saveCover(context, currentSong.url, artworkData)
+                                   }
+                               } else {
+                                   Log.d("PlaylistStateController", "元数据变化但无封面数据，继续等待")
+                               }
+                          }
+                      }
 
                     override fun onEvents(player: Player, events: Player.Events) {
                         if (events.contains(Player.EVENT_TIMELINE_CHANGED) ||

@@ -109,7 +109,7 @@ fun AlbumDetailScreen(
                         webDavConfig
                     }
 
-                    webDavClient.fetchMusicFiles(effectiveConfig)
+                    webDavClient.fetchMusicFiles(effectiveConfig, context)
                         .onSuccess { files ->
                             currentAlbumSongs = files
                             tech.xvanturing.musicdav.data.PlaylistCache.save(context, album.directoryUrl, files)

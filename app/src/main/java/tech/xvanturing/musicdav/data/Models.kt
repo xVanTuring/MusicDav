@@ -26,8 +26,16 @@ data class MusicFile(
     val url: String,
     val path: String,
     val size: Long = 0L,
-    val modifiedDate: Long = 0L
-)
+    val modifiedDate: Long = 0L,
+    val title: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+    val durationMs: Long = 0L
+) {
+    val displayName: String
+        get() = title?.takeIf { it.isNotBlank() }
+            ?: name.substringBeforeLast('.')
+}
 
 // 播放模式枚举
 enum class PlayMode {
@@ -297,7 +305,11 @@ object PlaylistCache {
             val path = obj.optString("path", "")
             val size = obj.optLong("size", 0L)
             val modifiedDate = obj.optLong("modifiedDate", 0L)
-            result.add(MusicFile(name, url, path, size, modifiedDate))
+            val title = if (obj.has("title")) obj.optString("title", null).takeIf { !it.isNullOrEmpty() } else null
+            val artist = if (obj.has("artist")) obj.optString("artist", null).takeIf { !it.isNullOrEmpty() } else null
+            val album = if (obj.has("album")) obj.optString("album", null).takeIf { !it.isNullOrEmpty() } else null
+            val durationMs = obj.optLong("durationMs", 0L)
+            result.add(MusicFile(name, url, path, size, modifiedDate, title, artist, album, durationMs))
         }
         return result
     }
@@ -311,6 +323,10 @@ object PlaylistCache {
             obj.put("path", file.path)
             obj.put("size", file.size)
             obj.put("modifiedDate", file.modifiedDate)
+            if (file.title != null) obj.put("title", file.title)
+            if (file.artist != null) obj.put("artist", file.artist)
+            if (file.album != null) obj.put("album", file.album)
+            obj.put("durationMs", file.durationMs)
             arr.put(obj)
         }
         return arr.toString()
