@@ -219,7 +219,7 @@ class MusicCacheService : Service() {
         serviceScope.launch {
             MusicCache.cacheSong(applicationContext, musicFile, config) { progress ->
                 task.progress = progress
-                Log.d("MusicCacheService", "📥 Cache progress: ${musicFile.name} - $progress%")
+               Log.d("MusicCacheService", "📥 Cache progress: ${musicFile.name} - $progress%")
                 notifyListeners { it.onTaskProgress(taskId, progress) }
                 updateForegroundNotification()
             }
@@ -265,7 +265,6 @@ class MusicCacheService : Service() {
 
     private fun checkAllTasksCompleted() {
         if (activeTasks.isEmpty()) {
-            stopForeground(true)
             notifyListeners { it.onAllTasksCompleted() }
         }
     }
@@ -273,14 +272,14 @@ class MusicCacheService : Service() {
     private fun updateForegroundNotification() {
         if (activeTasks.isEmpty()) {
             Log.d("MusicCacheService", "🔕 Stopping foreground notification (no active tasks)")
-            stopForeground(true)
+            stopForeground(STOP_FOREGROUND_REMOVE)
             return
         }
 
         val downloadingTasks = activeTasks.values.filter { it.status == CacheTaskStatus.DOWNLOADING }
         if (downloadingTasks.isEmpty()) {
             Log.d("MusicCacheService", "🔕 Stopping foreground notification (no downloading tasks)")
-            stopForeground(true)
+            stopForeground(STOP_FOREGROUND_REMOVE)
             return
         }
 
