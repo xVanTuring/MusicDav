@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import android.widget.Toast
+import androidx.compose.runtime.mutableIntStateOf
 import com.spotify.music.data.Album
 import com.spotify.music.data.ServerConfigRepository
 import com.spotify.music.player.PlaylistStateController
@@ -43,15 +44,15 @@ fun AlbumDetailScreen(
     album: Album,
     onBack: () -> Unit,
     playlistController: PlaylistStateController,
+    modifier: Modifier = Modifier,
     onEdit: (Album) -> Unit = {},
-    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
     // 存储当前专辑的歌曲列表
     var currentAlbumSongs by remember { mutableStateOf<List<com.spotify.music.data.MusicFile>>(emptyList()) }
-    var refreshTrigger by remember { mutableStateOf(0) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
     var hasTriedInitialRefresh by remember { mutableStateOf(false) }
 
     // 缓存状态
@@ -176,10 +177,10 @@ fun AlbumDetailScreen(
                                     context = context,
                                     musicFiles = currentAlbumSongs,
                                     config = webDavConfig,
-                                    onSuccess = { paths ->
+                                    onSuccess = { count ->
                                         Toast.makeText(
                                             context,
-                                            "Cached ${paths.count()} songs",
+                                            "正在缓存 $count 首歌曲...",
                                             Toast.LENGTH_SHORT
                                         ).show()
                                         isCachingAlbum = false

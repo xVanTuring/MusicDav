@@ -146,7 +146,7 @@ class CacheManager(private val context: Context) {
         context: Context,
         musicFiles: List<MusicFile>,
         config: WebDavConfig,
-        onSuccess: (List<String>) -> Unit = {},
+        onSuccess: (Int) -> Unit = {},
         onFailure: (Throwable) -> Unit = {}
     ) {
         scope.launch {
@@ -162,10 +162,10 @@ class CacheManager(private val context: Context) {
                 )
             }
 
-            onSuccess(emptyList())
+            onSuccess(musicFiles.size)
         }
     }
-
+ 
     suspend fun clearCache(context: Context): Result<Unit> {
         val result = MusicCache.clearCache(context)
         if (result.isSuccess) {
