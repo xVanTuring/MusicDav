@@ -47,6 +47,7 @@ class CacheManager(private val context: Context) {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as MusicCacheService.LocalBinder
             cacheService = binder.getService()
+            cacheService?.addListener(taskListener)
             isBound = true
             Log.d("CacheManager", "MusicCacheService connected")
 
@@ -107,7 +108,7 @@ class CacheManager(private val context: Context) {
                     
                     if (newProgress.completedSongs >= newProgress.totalSongs) {
                         albumProgress.remove(albumId)
-                        urlToAlbumId.remove(musicFileUrl)
+                        urlToAlbumId.keys.removeAll { urlToAlbumId[it] == albumId }
                         _state.value = _state.value.copy(
                             albumCachingProgress = _state.value.albumCachingProgress - albumId
                         )
