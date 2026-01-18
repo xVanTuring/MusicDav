@@ -283,7 +283,8 @@ fun AlbumDetailScreen(
             },
             modifier = modifier.padding(paddingValues),
             showTopBar = false, // Hide MusicListScreen's top bar
-            externalRefreshTrigger = { refreshTrigger } // Pass refresh trigger value
+            externalRefreshTrigger = { refreshTrigger }, // Pass refresh trigger value
+            cacheManager = cacheManager
         )
     }
 }

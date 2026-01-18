@@ -61,7 +61,8 @@ fun MusicListScreen(
     showTopBar: Boolean = true,
     externalRefreshTrigger: (() -> Unit)? = null,
     enableCache: Boolean = false,
-    onCacheRequest: (MusicFile) -> Unit = {}
+    onCacheRequest: (MusicFile) -> Unit = {},
+    cacheManager: com.spotify.music.player.CacheManager? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var musicFiles by remember { mutableStateOf<List<MusicFile>>(emptyList()) }
@@ -229,7 +230,8 @@ fun MusicListScreen(
                 onSongSelected = onSongSelected,
                 enableCache = enableCache,
                 onCacheRequest = onCacheRequest,
-                context = context
+                context = context,
+                cacheManager = cacheManager
             )
         }
     } else {
@@ -246,7 +248,8 @@ fun MusicListScreen(
                 onSongSelected = onSongSelected,
                 enableCache = enableCache,
                 onCacheRequest = onCacheRequest,
-                context = context
+                context = context,
+                cacheManager = cacheManager
             )
         }
     }
@@ -262,7 +265,8 @@ private fun Content(
     onSongSelected: (Int, MusicFile) -> Unit,
     enableCache: Boolean,
     onCacheRequest: (MusicFile) -> Unit,
-    context: android.content.Context
+    context: android.content.Context,
+    cacheManager: com.spotify.music.player.CacheManager? = null
 ) {
     Box(
         modifier = Modifier
@@ -289,7 +293,8 @@ private fun Content(
                             onClick = { onSongSelected(index, musicFile) },
                             enableCache = enableCache,
                             onCacheRequest = onCacheRequest,
-                            context = context
+                            context = context,
+                            cacheManager = cacheManager
                         )
                     }
                 }
@@ -335,17 +340,11 @@ fun MusicListItem(
     modifier: Modifier = Modifier,
     enableCache: Boolean = false,
     onCacheRequest: (MusicFile) -> Unit = {},
-    context: android.content.Context? = null
+    context: android.content.Context? = null,
+    cacheManager: com.spotify.music.player.CacheManager? = null
 ) {
-    val isCached = remember { mutableStateOf(false) }
-
-    LaunchedEffect(musicFile.url) {
-        if (enableCache && context != null) {
-            isCached.value = withContext(Dispatchers.IO) {
-                MusicCache.isCached(context, musicFile.url)
-            }
-        }
-    }
+    val isCached = cacheManager?.state?.cachedSongs?.any { it.url == musicFile.url } ?: false
+    val isCaching = cacheManager?.state?.cachingProgress?.containsKey(musicFile.url) ?: false
 
     ListItem(
         headlineContent = {
@@ -373,20 +372,10 @@ fun MusicListItem(
         },
         trailingContent = if (enableCache && context != null) {
             {
-                var isCaching by remember { mutableStateOf(false) }
-                val scope = rememberCoroutineScope()
-
                 IconButton(
                     onClick = {
                         if (!isCaching) {
-                            isCaching = true
                             onCacheRequest(musicFile)
-                            scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    isCached.value = MusicCache.isCached(context, musicFile.url)
-                                }
-                                isCaching = false
-                            }
                         }
                     },
                     enabled = !isCaching
@@ -396,7 +385,7 @@ fun MusicListItem(
                             modifier = Modifier.size(24.dp),
                             strokeWidth = 2.dp
                         )
-                    } else if (isCached.value) {
+                    } else if (isCached) {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = "Cached",
