@@ -43,6 +43,22 @@ import com.spotify.music.webdav.WebDavClient
 import kotlinx.coroutines.launch
 import java.net.URL
 
+enum class FilePickerMode {
+    DIRECTORY_ONLY,    // 只能选择目录
+    FILE_ONLY,         // 只能选择文件
+    FILE_AND_DIRECTORY // 两者都可以选择
+}
+
+data class FilePickerConfig(
+    val title: String,
+    val subtitle: String? = null,
+    val mode: FilePickerMode = FilePickerMode.DIRECTORY_ONLY,
+    val allowedFileExtensions: Set<String> = emptySet(), // 文件扩展名过滤，如 setOf("jpg", "png", "webp")
+    val showFileIcons: Boolean = true,
+    val showClearSelectionButton: Boolean = false,
+    val showFilesInDirectoryMode: Boolean = true // 在目录模式下是否显示文件（只读）
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FolderPickerScreen(
@@ -336,3 +352,5 @@ fun FolderPickerScreen(
         }
     }
 }
+
+
