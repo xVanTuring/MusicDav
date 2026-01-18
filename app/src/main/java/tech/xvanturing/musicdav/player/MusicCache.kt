@@ -26,8 +26,7 @@ data class CacheMetadata(
 
 object MusicCache {
     private const val CACHE_DIR = "music_cache"
-    private const val MAX_CACHE_BYTES = 2L * 1024 * 1024 * 1024 // 2GB
-    private const val MAX_CONCURRENT_DOWNLOADS = 3
+    private const val MAX_CACHE_BYTES = 20L * 1024 * 1024 * 1024 // 2GB
     
     private val downloadMutex = Mutex()
     private val activeDownloads = mutableSetOf<String>()

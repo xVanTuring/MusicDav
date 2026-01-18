@@ -68,7 +68,7 @@ import tech.xvanturing.musicdav.player.CacheMetadata
 import tech.xvanturing.musicdav.player.MusicCache
 import kotlinx.coroutines.launch
 
-private const val MAX_CACHE_BYTES = 2L * 1024 * 1024 * 1024
+private const val MAX_CACHE_BYTES = 20L * 1024 * 1024 * 1024
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
