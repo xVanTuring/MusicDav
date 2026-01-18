@@ -226,6 +226,7 @@ fun MainTabScreen(
             onSave = { name, url, username, password, directoryUrl, coverImageUrl, serverConfigId ->
                 val config = com.spotify.music.data.WebDavConfig(url = url, username = username, password = password)
                 val album = com.spotify.music.data.Album(
+                    id = java.util.UUID.randomUUID().toString(),
                     name = name,
                     config = config,
                     directoryUrl = directoryUrl,

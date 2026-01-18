@@ -103,6 +103,7 @@ enum class PlayMode {
 
 // Album configuration for a playlist
  data class Album(
+    val id: String,
     val name: String,
     val config: WebDavConfig,
     val directoryUrl: String? = null,
@@ -215,6 +216,7 @@ object ServerConfigRepository {
         val result = mutableListOf<Album>()
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i) ?: continue
+            var id = obj.optString("id", "")
             val name = obj.optString("name", "")
             val cfg = obj.optJSONObject("config") ?: org.json.JSONObject()
             val url = cfg.optString("url", "")
@@ -223,8 +225,14 @@ object ServerConfigRepository {
             val directoryUrl = if (obj.has("directoryUrl")) obj.optString("directoryUrl", null) else null
             val coverImageUrl = if (obj.has("coverImageUrl")) obj.optString("coverImageUrl", null) else null
             val serverConfigId = if (obj.has("serverConfigId")) obj.optString("serverConfigId", null) else null
+            
+            if (id.isBlank()) {
+                id = java.util.UUID.randomUUID().toString()
+            }
+            
             result.add(
                 Album(
+                    id = id,
                     name = name,
                     config = WebDavConfig(url, username, password),
                     directoryUrl = directoryUrl,
@@ -240,6 +248,7 @@ object ServerConfigRepository {
         val arr = org.json.JSONArray()
         for (album in albums) {
             val obj = org.json.JSONObject()
+            obj.put("id", album.id)
             obj.put("name", album.name)
             val cfg = org.json.JSONObject()
             cfg.put("url", album.config.url)

@@ -147,6 +147,7 @@ fun AlbumListScreen(
                     password = password
                 )
                 val album = Album(
+                    id = java.util.UUID.randomUUID().toString(),
                     name = name,
                     config = config,
                     directoryUrl = directoryUrl,

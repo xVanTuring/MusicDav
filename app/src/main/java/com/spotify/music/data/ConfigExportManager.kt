@@ -95,6 +95,7 @@ object ConfigExportManager {
         val albumsArr = JSONArray()
         for (album in albums) {
             val albumObj = JSONObject()
+            albumObj.put("id", album.id)
             albumObj.put("name", album.name)
             
             val configObj = JSONObject()
@@ -137,7 +138,12 @@ object ConfigExportManager {
         for (i in 0 until albumsArr.length()) {
             val albumObj = albumsArr.optJSONObject(i) ?: continue
             val cfg = albumObj.optJSONObject("config") ?: JSONObject()
+            var id = albumObj.optString("id", "")
+            if (id.isBlank()) {
+                id = java.util.UUID.randomUUID().toString()
+            }
             val album = Album(
+                id = id,
                 name = albumObj.optString("name", ""),
                 config = WebDavConfig(
                     url = cfg.optString("url", ""),
