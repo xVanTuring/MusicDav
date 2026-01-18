@@ -32,14 +32,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import android.widget.Toast
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.mutableIntStateOf
 import tech.xvanturing.musicdav.data.Album
 import tech.xvanturing.musicdav.data.ServerConfigRepository
 import tech.xvanturing.musicdav.player.PlaylistStateController
 import tech.xvanturing.musicdav.player.CacheManager
-import tech.xvanturing.musicdav.player.MusicCache
 import tech.xvanturing.musicdav.ui.BottomPlayerBar
 import tech.xvanturing.musicdav.ui.MusicListScreen
 import kotlinx.coroutines.launch
+import tech.xvanturing.musicdav.data.MusicFile
+import tech.xvanturing.musicdav.data.PlaylistCache
+import tech.xvanturing.musicdav.data.MusicMetadataCache
+import tech.xvanturing.musicdav.webdav.WebDavClient
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,13 +59,14 @@ fun AlbumDetailScreen(
 
     // 存储当前专辑的歌曲列表
     var currentAlbumSongs by remember {
-        mutableStateOf<List<tech.xvanturing.musicdav.data.MusicFile>>(
+        mutableStateOf<List<MusicFile>>(
             emptyList()
         )
     }
     var isExtractingMetadata by remember { mutableStateOf(false) }
     var metadataExtractionProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var hasTriedInitialRefresh by remember { mutableStateOf(false) }
+    var forceRefreshKey by remember { mutableIntStateOf(0) }
 
     // 缓存状态
     val cacheManager = remember { CacheManager(context) }
@@ -70,6 +75,23 @@ fun AlbumDetailScreen(
     // 拦截返回键，返回到专辑列表页面
     BackHandler {
         onBack()
+    }
+
+    // 强制刷新函数：清除缓存并重新加载数据
+    fun forceRefresh() {
+        coroutineScope.launch {
+            // 清除播放列表缓存
+            PlaylistCache.clear(context, album.directoryUrl)
+            // 清除该专辑下所有歌曲的元数据缓存
+            currentAlbumSongs.forEach { musicFile ->
+                MusicMetadataCache.remove(context, musicFile.url)
+            }
+            // 清除当前歌曲列表
+            currentAlbumSongs = emptyList()
+            // 重置初始加载标志，触发重新加载
+            hasTriedInitialRefresh = false
+            forceRefreshKey++
+        }
     }
 
     val webDavConfig = if (album.serverConfigId != null) {
@@ -93,13 +115,13 @@ fun AlbumDetailScreen(
     }
 
     // 初始加载时刷新专辑详情
-    LaunchedEffect(album.name + album.directoryUrl) {
+    LaunchedEffect(album.name + album.directoryUrl, forceRefreshKey) {
         if (!hasTriedInitialRefresh) {
             hasTriedInitialRefresh = true
             coroutineScope.launch {
                 try {
                     // 先加载缓存数据（如果有）
-                    val cachedFiles = tech.xvanturing.musicdav.data.PlaylistCache.load(
+                    val cachedFiles = PlaylistCache.load(
                         context,
                         album.directoryUrl
                     )
@@ -108,7 +130,7 @@ fun AlbumDetailScreen(
                     }
 
                     // 尝试获取最新数据并提取元数据
-                    val webDavClient = tech.xvanturing.musicdav.webdav.WebDavClient()
+                    val webDavClient = WebDavClient()
                     val effectiveConfig = if (album.directoryUrl != null) {
                         webDavConfig.copy(url = album.directoryUrl)
                     } else {
@@ -121,18 +143,13 @@ fun AlbumDetailScreen(
                     }
                         .onSuccess { files ->
                             currentAlbumSongs = files
-                            tech.xvanturing.musicdav.data.PlaylistCache.save(
+                            PlaylistCache.save(
                                 context,
                                 album.directoryUrl,
                                 files
                             )
                             isExtractingMetadata = false
                             metadataExtractionProgress = null
-                            Toast.makeText(
-                                context,
-                                "已加载 ${files.size} 首歌曲",
-                                Toast.LENGTH_SHORT
-                            ).show()
                         }
                         .onFailure { e ->
                             // 如果已经有缓存数据，显示提示
@@ -148,7 +165,7 @@ fun AlbumDetailScreen(
                         }
                 } catch (e: Exception) {
                     // 如果已经有缓存数据，显示提示
-                    val cachedFiles = tech.xvanturing.musicdav.data.PlaylistCache.load(
+                    val cachedFiles = PlaylistCache.load(
                         context,
                         album.directoryUrl
                     )
@@ -188,6 +205,12 @@ fun AlbumDetailScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { forceRefresh() }) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh"
+                        )
+                    }
                     IconButton(
                         onClick = {
                             if (currentAlbumSongs.isNotEmpty() && albumCacheProgress == null) {

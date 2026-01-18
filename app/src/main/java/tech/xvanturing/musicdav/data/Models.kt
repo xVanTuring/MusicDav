@@ -284,6 +284,12 @@ object PlaylistCache {
         val key = getCacheKey(directoryUrl)
         prefs.edit { putString(key, toJson(musicFiles)) }
     }
+
+    fun clear(context: android.content.Context, directoryUrl: String?) {
+        val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
+        val key = getCacheKey(directoryUrl)
+        prefs.edit { remove(key) }
+    }
     
     private fun parseMusicFiles(json: String): List<MusicFile> {
         val arr = org.json.JSONArray(json)
