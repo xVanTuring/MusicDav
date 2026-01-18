@@ -26,10 +26,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CheckCircle
 import tech.xvanturing.musicdav.data.MusicFile
 import tech.xvanturing.musicdav.player.MusicCache
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import okhttp3.Credentials
+import coil3.network.NetworkHeaders
+import coil3.network.httpHeaders
+import coil3.request.crossfade
 
 @Composable
 fun MusicListScreen(
@@ -42,7 +51,8 @@ fun MusicListScreen(
     modifier: Modifier = Modifier,
     enableCache: Boolean = false,
     onCacheRequest: (MusicFile) -> Unit = {},
-    cacheManager: tech.xvanturing.musicdav.player.CacheManager? = null
+    cacheManager: tech.xvanturing.musicdav.player.CacheManager? = null,
+    playlistController: tech.xvanturing.musicdav.player.PlaylistStateController? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -60,7 +70,8 @@ fun MusicListScreen(
             enableCache = enableCache,
             onCacheRequest = onCacheRequest,
             context = context,
-            cacheManager = cacheManager
+            cacheManager = cacheManager,
+            playlistController = playlistController
         )
     }
 }
@@ -76,7 +87,8 @@ private fun Content(
     enableCache: Boolean,
     onCacheRequest: (MusicFile) -> Unit,
     context: android.content.Context,
-    cacheManager: tech.xvanturing.musicdav.player.CacheManager? = null
+    cacheManager: tech.xvanturing.musicdav.player.CacheManager? = null,
+    playlistController: tech.xvanturing.musicdav.player.PlaylistStateController? = null
 ) {
     Box(
         modifier = Modifier
@@ -104,7 +116,8 @@ private fun Content(
                             enableCache = enableCache,
                             onCacheRequest = onCacheRequest,
                             context = context,
-                            cacheManager = cacheManager
+                            cacheManager = cacheManager,
+                            playlistController = playlistController
                         )
                     }
                 }
@@ -151,10 +164,17 @@ fun MusicListItem(
     enableCache: Boolean = false,
     onCacheRequest: (MusicFile) -> Unit = {},
     context: android.content.Context? = null,
-    cacheManager: tech.xvanturing.musicdav.player.CacheManager? = null
+    cacheManager: tech.xvanturing.musicdav.player.CacheManager? = null,
+    playlistController: tech.xvanturing.musicdav.player.PlaylistStateController? = null
 ) {
     val isCached = cacheManager?.state?.cachedSongs?.any { it.url == musicFile.url } ?: false
     val isCaching = cacheManager?.state?.cachingProgress?.containsKey(musicFile.url) ?: false
+
+    val cachedCoverUrl = playlistController?.state?.cachedCoverMap?.get(musicFile.url)
+    val albumCoverUrl = playlistController?.state?.songToAlbumCoverMap?.get(musicFile.url)
+    val currentWebDavConfig = playlistController?.state?.currentWebDavConfig
+
+    val coverUrl = cachedCoverUrl ?: albumCoverUrl
 
     ListItem(
         headlineContent = {
@@ -184,14 +204,50 @@ fun MusicListItem(
             )
         },
         leadingContent = {
-            Icon(
-                imageVector = Icons.Default.MusicNote,
-                contentDescription = null,
-                tint = if (isPlaying)
-                    MaterialTheme.colorScheme.primary
-                else
-                    MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (coverUrl != null && context != null) {
+                if (cachedCoverUrl != null) {
+                    AsyncImage(
+                        model = coverUrl,
+                        contentDescription = musicFile.displayName,
+                        modifier = Modifier.size(48.dp),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                } else {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(coverUrl)
+                            .httpHeaders(
+                                if (currentWebDavConfig != null) {
+                                    NetworkHeaders.Builder()
+                                        .set(
+                                            "Authorization",
+                                            Credentials.basic(
+                                                currentWebDavConfig.username,
+                                                currentWebDavConfig.password
+                                            )
+                                        )
+                                        .build()
+                                } else {
+                                    NetworkHeaders.EMPTY
+                                }
+                            )
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = musicFile.displayName,
+                        modifier = Modifier.size(48.dp),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                }
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = if (isPlaying)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         },
         trailingContent = if (enableCache && context != null) {
             {

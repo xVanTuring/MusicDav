@@ -127,6 +127,10 @@ fun AlbumDetailScreen(
                     )
                     if (cachedFiles.isNotEmpty()) {
                         currentAlbumSongs = cachedFiles
+                        // 设置专辑封面映射
+                        playlistController.setSongAlbumCovers(cachedFiles, album.coverImageUrl)
+                        // 加载缓存封面
+                        playlistController.loadCachedCovers(context, cachedFiles)
                     }
 
                     // 尝试获取最新数据并提取元数据
@@ -148,6 +152,12 @@ fun AlbumDetailScreen(
                                 album.directoryUrl,
                                 files
                             )
+                            // 设置专辑封面映射
+                            playlistController.setSongAlbumCovers(files, album.coverImageUrl)
+                            // 设置 WebDAV 配置
+                            playlistController.setCurrentWebDavConfig(webDavConfig)
+                            // 加载缓存封面
+                            playlistController.loadCachedCovers(context, files)
                             isExtractingMetadata = false
                             metadataExtractionProgress = null
                         }
@@ -341,7 +351,8 @@ fun AlbumDetailScreen(
                             }
                         )
                     },
-                    cacheManager = cacheManager
+                    cacheManager = cacheManager,
+                    playlistController = playlistController
                 )
             }
         }
