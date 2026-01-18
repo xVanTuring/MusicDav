@@ -20,6 +20,7 @@ import com.spotify.music.ui.screen.AlbumDetailScreen
 import com.spotify.music.ui.screen.ServerConfigListScreen
 import com.spotify.music.ui.screen.ServerConfigCreateScreen
 import com.spotify.music.ui.screen.AlbumCreateForm
+import com.spotify.music.ui.screen.CacheManagementScreen
 import com.spotify.music.ui.theme.MusicDavTheme
 import com.spotify.music.ui.BottomPlayerBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +29,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Column
@@ -308,6 +310,17 @@ fun MainTabScreen(
                         },
                         label = { Text("Servers") }
                     )
+                    NavigationBarItem(
+                        selected = selectedTabIndex == 2,
+                        onClick = { selectedTabIndex = 2 },
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.Storage,
+                                contentDescription = "Cache"
+                            )
+                        },
+                        label = { Text("Cache") }
+                    )
                 }
             }
         },
@@ -320,13 +333,10 @@ fun MainTabScreen(
         ) {
             when (selectedTabIndex) {
                 0 -> {
-                    // 专辑列表标签页
                     AlbumListScreen(
                         albums = albums,
                         onSelect = onSelectAlbum,
                         onCreate = { album, serverConfigId ->
-                            // 这里不应该被调用，因为AlbumListScreen的添加按钮会触发creatingAlbum状态
-                            // 但为了安全，保留这个处理
                             onCreateAlbum(album, serverConfigId)
                         },
                         onDelete = onDeleteAlbum,
@@ -335,11 +345,15 @@ fun MainTabScreen(
                     )
                 }
                 1 -> {
-                    // 服务器配置列表标签页
                     ServerConfigListScreen(
                         onCreate = { creatingServerConfig = true },
                         onEdit = { config -> editingServerConfig = config },
                         refreshKey = serverConfigsRefreshKey,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                2 -> {
+                    CacheManagementScreen(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
