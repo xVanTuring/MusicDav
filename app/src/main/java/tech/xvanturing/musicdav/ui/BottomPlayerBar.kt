@@ -175,9 +175,9 @@ fun BottomPlayerBar(
                       } else {
                          // Default placeholder when no cover
                          Box(
-                             modifier = Modifier
-                                 .size(48.dp)
-                                 .clip(RoundedCornerShape(8.dp))
+                                      modifier = Modifier
+                                          .size(40.dp)
+                                          .clip(RoundedCornerShape(6.dp))
                                  .background(
                                      MaterialTheme.colorScheme.surfaceVariant,
                                      RoundedCornerShape(8.dp)
@@ -211,7 +211,7 @@ fun BottomPlayerBar(
                     // 播放模式按钮
                     IconButton(
                         onClick = onTogglePlayMode,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             imageVector = when (playlistState.playMode) {
@@ -229,40 +229,42 @@ fun BottomPlayerBar(
                                 PlayMode.REPEAT_ALL -> MaterialTheme.colorScheme.primary
                                 PlayMode.PLAY_ONCE -> MaterialTheme.colorScheme.onSurface
                             },
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
                     IconButton(
                         onClick = onPrevious,
-                        enabled = playlistState.hasPrevious
+                        enabled = playlistState.hasPrevious,
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipPrevious,
                             contentDescription = "Previous",
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
-                    IconButton(onClick = onPlayPause) {
+                    IconButton(onClick = onPlayPause, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = if (playlistState.isPlaying)
                                 Icons.Default.Pause
                             else
                                 Icons.Default.PlayArrow,
                             contentDescription = if (playlistState.isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(40.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                     }
 
                     IconButton(
                         onClick = onNext,
-                        enabled = playlistState.hasNext
+                        enabled = playlistState.hasNext,
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipNext,
                             contentDescription = "Next",
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
