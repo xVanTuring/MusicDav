@@ -190,7 +190,7 @@ fun BottomPlayerBar(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = playlistState.currentSong?.name?.substringBeforeLast('.') ?: "",
+                            text = playlistState.currentSong?.displayName ?: "",
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
