@@ -1,5 +1,6 @@
 package tech.xvanturing.musicdav.ui
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,13 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CheckCircle
 import tech.xvanturing.musicdav.data.MusicFile
-import tech.xvanturing.musicdav.player.MusicCache
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import okhttp3.Credentials
@@ -104,6 +101,7 @@ private fun Content(
                     CircularProgressIndicator()
                 }
             }
+
             !musicFiles.isEmpty() -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize()
@@ -122,6 +120,7 @@ private fun Content(
                     }
                 }
             }
+
             errorMessage != null -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -132,13 +131,14 @@ private fun Content(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = errorMessage ?: "",
+                            text = errorMessage,
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
             }
+
             musicFiles.isEmpty() -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -182,7 +182,8 @@ fun MusicListItem(
                 Text(
                     text = musicFile.displayName,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.basicMarquee(),
+                    softWrap = false,
                     style = MaterialTheme.typography.bodyMedium
                 )
                 musicFile.artist?.let { artist ->
@@ -190,7 +191,8 @@ fun MusicListItem(
                     Text(
                         text = artist,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.basicMarquee(),
+                        softWrap = false,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -198,8 +200,11 @@ fun MusicListItem(
             }
         },
         supportingContent = {
+            val durationText = if (musicFile.durationMs > 0) formatDuration(musicFile.durationMs) else null
+            val sizeText = formatFileSize(musicFile.size)
+            val text = if (durationText != null) "$durationText • $sizeText" else sizeText
             Text(
-                text = formatFileSize(musicFile.size),
+                text = text,
                 style = MaterialTheme.typography.bodySmall
             )
         },
@@ -297,4 +302,11 @@ private fun formatFileSize(bytes: Long): String {
         bytes < 1024 * 1024 -> "${bytes / 1024} KB"
         else -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
     }
+}
+
+private fun formatDuration(ms: Long): String {
+    val seconds = ms / 1000
+    val minutes = seconds / 60
+    val remainingSeconds = seconds % 60
+    return "$minutes:${remainingSeconds.toString().padStart(2, '0')}"
 }
