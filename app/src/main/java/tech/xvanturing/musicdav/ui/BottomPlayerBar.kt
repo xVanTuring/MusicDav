@@ -1,6 +1,7 @@
 package tech.xvanturing.musicdav.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -193,7 +194,8 @@ fun BottomPlayerBar(
                             text = playlistState.currentSong?.displayName ?: "",
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            modifier = Modifier.basicMarquee(),
+                            softWrap = false
                         )
                         Text(
                             text = "${formatTime(playlistState.currentPosition)} / ${formatTime(playlistState.duration)}",
