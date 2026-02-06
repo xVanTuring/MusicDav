@@ -133,6 +133,21 @@ class PlaylistStateController {
                                     isLoadingMetadata = true,
                                     cachedCoverMap = _state.value.cachedCoverMap // 保留缓存映射
                                 )
+                                
+                                // 触发新歌曲缓存
+                                context.let { ctx ->
+                                    val newCurrentSong = state.songs.getOrNull(currentIndex)
+                                    if (newCurrentSong != null && state.currentWebDavConfig != null) {
+                                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                                            try {
+                                                MusicCacheService.startCaching(ctx, newCurrentSong, state.currentWebDavConfig!!)
+                                                Log.d("PlaylistStateController", "🎵 自动缓存: ${newCurrentSong.name}")
+                                            } catch (e: Exception) {
+                                                Log.e("PlaylistStateController", "自动缓存失败", e)
+                                            }
+                                        }
+                                    }
+                                }
                             } else {
                                 _state.value = _state.value.copy(duration = duration)
                             }
@@ -423,7 +438,7 @@ class PlaylistStateController {
         lastCredentials = null
     }
 
-    suspend fun loadCachedCovers(context: android.content.Context, songs: List<MusicFile>) {
+    fun loadCachedCovers(context: android.content.Context, songs: List<MusicFile>) {
         val newCachedCovers = mutableMapOf<String, String>()
         for (song in songs) {
             CoverCache.getCoverPath(context, song.url)?.let { path ->
