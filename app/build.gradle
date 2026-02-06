@@ -52,7 +52,7 @@ dependencies {
     implementation libs.androidx.media3.exoplayer
     implementation libs.androidx.media3.session
     implementation libs.androidx.media3.inspector
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.10.2"
+    implementation libs.kotlinx.coroutines.guava
 
     // WebDAV and networking
     implementation libs.sardine.android

@@ -23,7 +23,7 @@ object CacheRepository {
         }
         
         allMetadata.put(url, metadataJson)
-        prefs.edit().putString(KEY_METADATA, allMetadata.toString()).apply()
+        prefs.edit {putString(KEY_METADATA, allMetadata.toString())}
         Log.d("CacheRepository", "Saved metadata for: ${url.takeLast(30)}")
     }
     
@@ -77,7 +77,7 @@ object CacheRepository {
         val allMetadata = JSONObject(allMetadataJson)
         
         allMetadata.remove(url)
-        prefs.edit().putString(KEY_METADATA, allMetadata.toString()).apply()
+        prefs.edit {putString(KEY_METADATA, allMetadata.toString())}
         Log.d("CacheRepository", "Removed metadata for: ${url.takeLast(30)}")
     }
     
@@ -93,7 +93,7 @@ object CacheRepository {
     
     fun clearMetadata(context: Context) {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        prefs.edit().remove(KEY_METADATA).apply()
+        prefs.edit {remove(KEY_METADATA)}
         Log.d("CacheRepository", "Cleared all metadata")
     }
     
@@ -128,7 +128,7 @@ object CacheRepository {
             allMetadata.put(metadata.url, metadataJson)
         }
         
-        prefs.edit().putString(KEY_METADATA, allMetadata.toString()).apply()
+        prefs.edit {putString(KEY_METADATA, allMetadata.toString())}
         Log.d("CacheRepository", "Metadata repaired: ${validMetadata.size} valid entries")
     }
 }

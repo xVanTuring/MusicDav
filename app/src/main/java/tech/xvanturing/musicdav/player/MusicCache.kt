@@ -89,8 +89,8 @@ object MusicCache {
                 throw IOException("Unexpected response code: ${response.code}")
             }
             
-            val totalBytes = response.body?.contentLength() ?: -1L
-            val inputStream = response.body?.byteStream() ?: throw IOException("Response body is null")
+            val totalBytes = response.body.contentLength()
+            val inputStream = response.body.byteStream()
             
             var downloadedBytes = 0L
             var lastProgress = -1
@@ -134,32 +134,7 @@ object MusicCache {
             }
         }
     }
-    
-    suspend fun cacheAlbum(
-        context: Context,
-        musicFiles: List<MusicFile>,
-        config: WebDavConfig,
-        onProgress: (Int, Int) -> Unit = { current, total -> }
-    ): Result<List<String>> = withContext(Dispatchers.IO) {
-        val cachedPaths = mutableListOf<String>()
-        var cachedCount = 0
-        
-        for ((index, musicFile) in musicFiles.withIndex()) {
-            onProgress(index + 1, musicFiles.size)
-            
-            val result = cacheSong(context, musicFile, config) { progress ->
-            }
-            
-            result.onSuccess { path ->
-                cachedPaths.add(path)
-                cachedCount++
-            }.onFailure {
-                Log.w("MusicCache", "Failed to cache: ${musicFile.name}")
-            }
-        }
-        
-        Result.success(cachedPaths)
-    }
+
     
     suspend fun getCachedPath(context: Context, url: String): String? = withContext(Dispatchers.IO) {
         val cacheDir = getCacheDir(context)

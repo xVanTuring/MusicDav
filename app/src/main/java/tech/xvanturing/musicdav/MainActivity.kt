@@ -1,14 +1,28 @@
 package tech.xvanturing.musicdav
 
-import android.content.Context
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -16,39 +30,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import tech.xvanturing.musicdav.player.rememberNotificationPermissionState
 import tech.xvanturing.musicdav.player.rememberPlaylistStateController
-import tech.xvanturing.musicdav.ui.screen.AlbumListScreen
-import tech.xvanturing.musicdav.ui.screen.AlbumDetailScreen
-import tech.xvanturing.musicdav.ui.screen.ServerConfigListScreen
-import tech.xvanturing.musicdav.ui.screen.ServerConfigCreateScreen
-import tech.xvanturing.musicdav.ui.screen.AlbumCreateForm
-import tech.xvanturing.musicdav.ui.screen.CacheManagementScreen
-import tech.xvanturing.musicdav.ui.theme.MusicDavTheme
 import tech.xvanturing.musicdav.ui.BottomPlayerBar
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.media3.common.MediaItem
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.inspector.MetadataRetriever
-import kotlinx.coroutines.guava.await
-import kotlinx.coroutines.launch
-import okhttp3.Credentials
-import tech.xvanturing.musicdav.player.CoverCache
-import kotlin.use
+import tech.xvanturing.musicdav.ui.screen.AlbumCreateForm
+import tech.xvanturing.musicdav.ui.screen.AlbumDetailScreen
+import tech.xvanturing.musicdav.ui.screen.AlbumListScreen
+import tech.xvanturing.musicdav.ui.screen.CacheManagementScreen
+import tech.xvanturing.musicdav.ui.screen.ServerConfigCreateScreen
+import tech.xvanturing.musicdav.ui.screen.ServerConfigListScreen
+import tech.xvanturing.musicdav.ui.theme.MusicDavTheme
 
 
 class MainActivity : ComponentActivity() {
@@ -189,7 +178,7 @@ fun MainTabScreen(
     playlistController: tech.xvanturing.musicdav.player.PlaylistStateController,
     modifier: Modifier = Modifier
 ) {
-    var selectedTabIndex by remember { mutableStateOf(0) }
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
     var creatingAlbum by remember { mutableStateOf(false) }
     var creatingServerConfig by remember { mutableStateOf(false) }
     var editingServerConfig by remember {
@@ -197,8 +186,7 @@ fun MainTabScreen(
             null
         )
     }
-    var serverConfigsRefreshKey by remember { mutableStateOf(0) }
-    val context = LocalContext.current
+    var serverConfigsRefreshKey by remember { mutableIntStateOf(0) }
 
     // 拦截返回键处理创建状态
     androidx.activity.compose.BackHandler(enabled = creatingAlbum || creatingServerConfig || editingServerConfig != null) {

@@ -66,7 +66,7 @@ object MusicMetadataCache {
 
     fun clear(context: Context) {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        prefs.edit().remove(KEY_METADATA).apply()
+        prefs.edit {remove(KEY_METADATA)}
         Log.d("MusicMetadataCache", "Cleared all metadata")
     }
 
@@ -75,7 +75,7 @@ object MusicMetadataCache {
         val allMetadataJson = prefs.getString(KEY_METADATA, "{}") ?: "{}"
         val allMetadata = JSONObject(allMetadataJson)
         allMetadata.remove(url)
-        prefs.edit().putString(KEY_METADATA, allMetadata.toString()).apply()
+        prefs.edit {putString(KEY_METADATA, allMetadata.toString())}
         Log.d("MusicMetadataCache", "Removed metadata for: ${url.takeLast(30)}")
     }
 }

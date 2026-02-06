@@ -1,9 +1,7 @@
 package tech.xvanturing.musicdav
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -13,19 +11,17 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import tech.xvanturing.musicdav.data.MusicFile
-import tech.xvanturing.musicdav.data.WebDavConfig
-import tech.xvanturing.musicdav.player.CacheMetadata
-import tech.xvanturing.musicdav.player.MusicCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import org.json.JSONArray
 import org.json.JSONObject
+import tech.xvanturing.musicdav.data.MusicFile
+import tech.xvanturing.musicdav.data.WebDavConfig
+import tech.xvanturing.musicdav.player.CacheMetadata
+import tech.xvanturing.musicdav.player.MusicCache
 
 data class CacheTask(
     val id: String,
@@ -48,7 +44,6 @@ class MusicCacheService : Service() {
     private val binder = LocalBinder()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var notificationManager: NotificationManager? = null
-    private var foregroundServiceJob: Job? = null
 
     private val activeTasks = mutableMapOf<String, CacheTask>()
     private val taskListeners = mutableListOf<CacheTaskListener>()
@@ -58,8 +53,6 @@ class MusicCacheService : Service() {
         private const val NOTIFICATION_ID = 1001
         const val ACTION_START_CACHE = "tech.xvanturing.musicdav.action.START_CACHE"
         const val ACTION_CANCEL_CACHE = "tech.xvanturing.musicdav.action.CANCEL_CACHE"
-        const val ACTION_PAUSE_CACHE = "tech.xvanturing.musicdav.action.PAUSE_CACHE"
-        const val ACTION_RESUME_CACHE = "tech.xvanturing.musicdav.action.RESUME_CACHE"
         const val EXTRA_MUSIC_FILE = "music_file"
         const val EXTRA_WEBDAV_CONFIG = "webdav_config"
         const val EXTRA_TASK_ID = "task_id"
@@ -184,7 +177,7 @@ class MusicCacheService : Service() {
         Log.d("MusicCacheService", "🛑 Service destroyed")
         Log.d("MusicCacheService", "   Active tasks: ${activeTasks.size}")
         serviceScope.coroutineContext[Job]?.cancel()
-        stopForeground(true)
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
     private fun createNotificationChannel() {
