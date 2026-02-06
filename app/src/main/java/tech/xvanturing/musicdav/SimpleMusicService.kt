@@ -2,6 +2,7 @@ package tech.xvanturing.musicdav
 
 import android.app.PendingIntent
 import android.content.Intent
+import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
@@ -34,6 +35,7 @@ class SimpleMusicService : MediaSessionService() {
         private var staticPassword: String? = null
         private var instance: SimpleMusicService? = null
 
+        @OptIn(UnstableApi::class)
         fun setCredentials(username: String, password: String) {
             staticUsername = username
             staticPassword = password
@@ -176,7 +178,8 @@ class SimpleMusicService : MediaSessionService() {
             }
         }
     }
-    
+
+    @OptIn(UnstableApi::class)
     private fun updateAuthHeaders() {
         webDavUsername?.let { username ->
             webDavPassword?.let { password ->
