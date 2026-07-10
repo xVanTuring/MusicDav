@@ -85,6 +85,8 @@ object ConfigExportManager {
             val configObj = JSONObject()
             configObj.put("id", config.id)
             configObj.put("name", config.name)
+            configObj.put("urls", JSONArray(config.urls))
+            // Kept for compatibility with older app versions importing this file
             configObj.put("url", config.url)
             configObj.put("username", config.username)
             configObj.put("password", config.password)
@@ -121,14 +123,21 @@ object ConfigExportManager {
         val configsArr = obj.optJSONArray("serverConfigs") ?: JSONArray()
         for (i in 0 until configsArr.length()) {
             val configObj = configsArr.optJSONObject(i) ?: continue
+            val urls = if (configObj.has("urls")) {
+                val urlsArr = configObj.optJSONArray("urls") ?: JSONArray()
+                (0 until urlsArr.length()).mapNotNull { urlsArr.optString(it, null) }
+                    .filter { it.isNotBlank() }
+            } else {
+                listOfNotNull(configObj.optString("url", "").takeIf { it.isNotBlank() })
+            }
             val config = ServerConfig(
                 id = configObj.optString("id", ""),
                 name = configObj.optString("name", ""),
-                url = configObj.optString("url", ""),
+                urls = urls,
                 username = configObj.optString("username", ""),
                 password = configObj.optString("password", "")
             )
-            if (config.id.isNotBlank() && config.name.isNotBlank()) {
+            if (config.id.isNotBlank() && config.name.isNotBlank() && config.urls.isNotEmpty()) {
                 configs.add(config)
             }
         }

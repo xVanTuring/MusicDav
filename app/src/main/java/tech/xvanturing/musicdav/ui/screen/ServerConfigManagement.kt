@@ -155,7 +155,7 @@ fun ServerConfigManagementDialog(
                     // Update existing
                     val updated = editingConfig!!.copy(
                         name = name,
-                        url = url,
+                        urls = listOf(url),
                         username = username,
                         password = password
                     )
@@ -165,7 +165,7 @@ fun ServerConfigManagementDialog(
                     val newConfig = ServerConfig(
                         id = java.util.UUID.randomUUID().toString(),
                         name = name,
-                        url = url,
+                        urls = listOf(url),
                         username = username,
                         password = password
                     )

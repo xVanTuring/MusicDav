@@ -62,6 +62,8 @@ import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import tech.xvanturing.musicdav.data.ServerConfigRepository
 import tech.xvanturing.musicdav.data.Album
+import tech.xvanturing.musicdav.data.relativizeAlbumUrl
+import tech.xvanturing.musicdav.data.resolveAlbumUrl
 import tech.xvanturing.musicdav.webdav.WebDavClient
 import kotlinx.coroutines.launch
 import okhttp3.Credentials
@@ -107,26 +109,31 @@ fun AlbumCreateForm(
         editingAlbum?.let { album ->
             isInitializingEdit = true
             name = album.name
-            directoryUrl = album.directoryUrl
-            manuallySelectedCoverImageUrl = album.coverImageUrl
 
+            val baseUrl: String
             if (album.serverConfigId != null) {
                 // Use existing server config
                 useExistingConfig = true
                 selectedServerConfigId = album.serverConfigId
                 val config = serverConfigs.find { it.id == album.serverConfigId }
-                config?.let {
-                    url = it.url
-                    username = it.username
-                    password = it.password
-                }
+                baseUrl = config?.url ?: album.config.url
+                url = baseUrl
+                username = config?.username ?: album.config.username
+                password = config?.password ?: album.config.password
             } else {
                 // Use manual config
                 useExistingConfig = false
-                url = album.config.url
+                baseUrl = album.config.url
+                url = baseUrl
                 username = album.config.username
                 password = album.config.password
             }
+
+            // album.directoryUrl/coverImageUrl 在关联了服务器时存的是相对路径，
+            // 这里还原成完整地址供表单内部（文件夹选择器/封面预览）使用
+            directoryUrl = resolveAlbumUrl(album.directoryUrl, baseUrl)
+            manuallySelectedCoverImageUrl = resolveAlbumUrl(album.coverImageUrl, baseUrl)
+
             // 延迟重置初始化标志，确保 serverConfig 的 LaunchedEffect 不会重置数据
             kotlinx.coroutines.delay(100)
             isInitializingEdit = false
@@ -618,6 +625,11 @@ fun AlbumCreateForm(
                                     isLoading = false
                                     val finalServerConfigId =
                                         if (useExistingConfig) selectedServerConfigId else null
+                                    // 关联了服务器配置时，目录/封面存相对路径，这样服务器地址调整了也不受影响
+                                    val savedDirectoryUrl =
+                                        if (finalServerConfigId != null) relativizeAlbumUrl(targetUrl, config.url) else targetUrl
+                                    val savedCoverUrl =
+                                        if (finalServerConfigId != null) relativizeAlbumUrl(finalCoverUrl, config.url) else finalCoverUrl
                                     if (name.isBlank()) {
                                         val folderName =
                                             targetUrl.trimEnd('/').substringAfterLast('/')
@@ -626,8 +638,8 @@ fun AlbumCreateForm(
                                             config.url,
                                             config.username,
                                             config.password,
-                                            targetUrl,
-                                            finalCoverUrl,
+                                            savedDirectoryUrl,
+                                            savedCoverUrl,
                                             finalServerConfigId
                                         )
                                     } else {
@@ -636,8 +648,8 @@ fun AlbumCreateForm(
                                             config.url,
                                             config.username,
                                             config.password,
-                                            targetUrl,
-                                            finalCoverUrl,
+                                            savedDirectoryUrl,
+                                            savedCoverUrl,
                                             finalServerConfigId
                                         )
                                     }

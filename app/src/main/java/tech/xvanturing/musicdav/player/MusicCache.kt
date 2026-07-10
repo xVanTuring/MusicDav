@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import tech.xvanturing.musicdav.data.MusicFile
 import tech.xvanturing.musicdav.data.WebDavConfig
+import tech.xvanturing.musicdav.data.cacheKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -49,38 +50,39 @@ object MusicCache {
         config: WebDavConfig,
         onProgress: (Int) -> Unit = {}
     ): Result<String> = withContext(Dispatchers.IO) {
-        val url = musicFile.url
-        
+        val fetchUrl = musicFile.url
+        val key = musicFile.cacheKey
+
         downloadMutex.withLock {
-            if (activeDownloads.contains(url)) {
+            if (activeDownloads.contains(key)) {
                 Log.d("MusicCache", "Song already being cached: ${musicFile.name}")
                 return@withContext Result.failure(IOException("Song is already being cached"))
             }
-            activeDownloads.add(url)
+            activeDownloads.add(key)
         }
-        
+
         try {
             val cacheDir = getCacheDir(context)
-            val fileName = sha256(url) + getFileExtension(url)
+            val fileName = sha256(key) + getFileExtension(fetchUrl)
             val cacheFile = File(cacheDir, fileName)
-            
+
             if (cacheFile.exists()) {
                 Log.d("MusicCache", "Song already cached: ${musicFile.name}")
-                CacheRepository.updateLastAccessTime(context, url)
+                CacheRepository.updateLastAccessTime(context, key)
                 return@withContext Result.success(cacheFile.absolutePath)
             }
-            
+
             val cacheSize = getCurrentCacheSize(context)
             val availableSpace = MAX_CACHE_BYTES - cacheSize
-            
+
             if (cacheSize >= MAX_CACHE_BYTES || cacheFile.length() > availableSpace) {
                 Log.d("MusicCache", "Cache full, running cleanup before caching: ${musicFile.name}")
                 ensureCacheSize(context, targetSize = (MAX_CACHE_BYTES * 0.8).toLong())
             }
-            
+
             val credentials = Credentials.basic(config.username, config.password)
             val request = Request.Builder()
-                .url(url)
+                .url(fetchUrl)
                 .header("Authorization", credentials)
                 .build()
             
@@ -115,14 +117,14 @@ object MusicCache {
             }
             
             val metadata = CacheMetadata(
-                url = url,
+                url = key,
                 fileName = fileName,
                 fileSize = cacheFile.length(),
                 lastAccessTime = System.currentTimeMillis(),
                 cacheTime = System.currentTimeMillis()
             )
-            CacheRepository.saveMetadata(context, url, metadata)
-            
+            CacheRepository.saveMetadata(context, key, metadata)
+
             Log.d("MusicCache", "Song cached successfully: ${musicFile.name}, size: ${cacheFile.length()}")
             Result.success(cacheFile.absolutePath)
         } catch (e: Exception) {
@@ -130,7 +132,7 @@ object MusicCache {
             Result.failure(e)
         } finally {
             downloadMutex.withLock {
-                activeDownloads.remove(url)
+                activeDownloads.remove(key)
             }
         }
     }

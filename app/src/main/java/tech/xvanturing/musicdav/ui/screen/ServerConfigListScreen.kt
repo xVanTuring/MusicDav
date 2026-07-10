@@ -132,7 +132,11 @@ fun ServerConfigListScreen(
                                     style = MaterialTheme.typography.titleMedium
                                 )
                                 Text(
-                                    text = config.url,
+                                    text = if (config.urls.size > 1) {
+                                        "${config.url} (+${config.urls.size - 1} 个备用地址)"
+                                    } else {
+                                        config.url
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

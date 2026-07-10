@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -24,6 +26,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -46,7 +49,11 @@ fun ServerConfigCreateScreen(
 ) {
     val context = LocalContext.current
     var name by remember { mutableStateOf(editingConfig?.name ?: "") }
-    var url by remember { mutableStateOf(editingConfig?.url ?: "") }
+    val urls = remember {
+        mutableStateListOf<String>().apply {
+            addAll(editingConfig?.urls?.takeIf { it.isNotEmpty() } ?: listOf(""))
+        }
+    }
     var username by remember { mutableStateOf(editingConfig?.username ?: "") }
     var password by remember { mutableStateOf(editingConfig?.password ?: "") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -85,13 +92,37 @@ fun ServerConfigCreateScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
-            OutlinedTextField(
-                value = url,
-                onValueChange = { url = it; errorMessage = null },
-                label = { Text("WebDAV URL") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+            Text(
+                text = "支持配置多个地址（如内网IP + 公网域名），连接时按顺序自动探测并使用第一个可用的地址",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
             )
+            urls.forEachIndexed { index, address ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    OutlinedTextField(
+                        value = address,
+                        onValueChange = { urls[index] = it; errorMessage = null },
+                        label = { Text(if (index == 0) "WebDAV URL" else "备用地址") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    IconButton(
+                        onClick = { urls.removeAt(index) },
+                        enabled = urls.size > 1
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "删除地址")
+                    }
+                }
+            }
+            TextButton(onClick = { urls.add("") }) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
+                Text("添加备用地址")
+            }
             OutlinedTextField(
                 value = username,
                 onValueChange = { username = it; errorMessage = null },
@@ -137,7 +168,8 @@ fun ServerConfigCreateScreen(
                 }
                 Button(
                     onClick = {
-                        if (name.isBlank() || url.isBlank() || username.isBlank() || password.isBlank()) {
+                        val cleanedUrls = urls.map { it.trim() }.filter { it.isNotBlank() }
+                        if (name.isBlank() || cleanedUrls.isEmpty() || username.isBlank() || password.isBlank()) {
                             errorMessage = "Please fill in all fields"
                             return@Button
                         }
@@ -146,7 +178,7 @@ fun ServerConfigCreateScreen(
                             // 编辑模式：更新现有配置
                             editingConfig!!.copy(
                                 name = name,
-                                url = url,
+                                urls = cleanedUrls,
                                 username = username,
                                 password = password
                             ).also { updated ->
@@ -157,7 +189,7 @@ fun ServerConfigCreateScreen(
                             ServerConfig(
                                 id = java.util.UUID.randomUUID().toString(),
                                 name = name,
-                                url = url,
+                                urls = cleanedUrls,
                                 username = username,
                                 password = password
                             ).also { new ->

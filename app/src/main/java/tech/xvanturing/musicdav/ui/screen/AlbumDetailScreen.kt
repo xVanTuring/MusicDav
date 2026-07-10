@@ -34,7 +34,9 @@ import android.widget.Toast
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.mutableIntStateOf
 import tech.xvanturing.musicdav.data.Album
+import tech.xvanturing.musicdav.data.ServerAddressResolver
 import tech.xvanturing.musicdav.data.ServerConfigRepository
+import tech.xvanturing.musicdav.data.resolveAlbumUrl
 import tech.xvanturing.musicdav.player.PlaylistStateController
 import tech.xvanturing.musicdav.player.CacheManager
 import tech.xvanturing.musicdav.ui.BottomPlayerBar
@@ -43,6 +45,7 @@ import kotlinx.coroutines.launch
 import tech.xvanturing.musicdav.data.MusicFile
 import tech.xvanturing.musicdav.data.PlaylistCache
 import tech.xvanturing.musicdav.data.MusicMetadataCache
+import tech.xvanturing.musicdav.data.cacheKey
 import tech.xvanturing.musicdav.webdav.WebDavClient
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,10 +84,10 @@ fun AlbumDetailScreen(
     fun forceRefresh() {
         coroutineScope.launch {
             // 清除播放列表缓存
-            PlaylistCache.clear(context, album.directoryUrl)
+            PlaylistCache.clear(context, album.id)
             // 清除该专辑下所有歌曲的元数据缓存
             currentAlbumSongs.forEach { musicFile ->
-                MusicMetadataCache.remove(context, musicFile.url)
+                MusicMetadataCache.remove(context, musicFile.cacheKey)
             }
             // 清除当前歌曲列表
             currentAlbumSongs = emptyList()
@@ -94,19 +97,27 @@ fun AlbumDetailScreen(
         }
     }
 
-    val webDavConfig = if (album.serverConfigId != null) {
-        ServerConfigRepository.load(context)
-            .find { it.id == album.serverConfigId }
-            ?.toWebDavConfig() ?: album.config
-    } else {
-        album.config
+    // 关联的服务器配置（若有），directoryUrl/coverImageUrl 在这种情况下存的是相对路径，
+    // 完整地址需要用服务器当前解析出的可用地址实时拼出来，这样服务器地址调整了也不会影响专辑
+    val serverConfig = remember(album.serverConfigId) {
+        album.serverConfigId?.let { id -> ServerConfigRepository.load(context).find { it.id == id } }
+    }
+    var webDavConfig by remember(album.serverConfigId) {
+        mutableStateOf(serverConfig?.toWebDavConfig() ?: album.config)
     }
 
-    // 设置 WebDAV 凭据
-    LaunchedEffect(webDavConfig) {
+    // 解析服务器当前可用地址（按候选地址顺序探测）
+    LaunchedEffect(album.serverConfigId) {
+        if (serverConfig != null) {
+            val resolvedUrl = ServerAddressResolver.resolve(serverConfig)
+            webDavConfig = serverConfig.toWebDavConfig(resolvedUrl)
+        }
         playlistController.setCredentials(webDavConfig)
         cacheManager.bind()
     }
+
+    val effectiveDirectoryUrl = resolveAlbumUrl(album.directoryUrl, webDavConfig.url)
+    val effectiveCoverImageUrl = resolveAlbumUrl(album.coverImageUrl, webDavConfig.url)
 
     DisposableEffect(Unit) {
         onDispose {
@@ -115,45 +126,55 @@ fun AlbumDetailScreen(
     }
 
     // 初始加载时刷新专辑详情
-    LaunchedEffect(album.name + album.directoryUrl, forceRefreshKey) {
+    LaunchedEffect(album.id, forceRefreshKey) {
         if (!hasTriedInitialRefresh) {
             hasTriedInitialRefresh = true
             coroutineScope.launch {
-                try {
-                    // 先加载缓存数据（如果有）
-                    val cachedFiles = PlaylistCache.load(
-                        context,
-                        album.directoryUrl
-                    )
-                    if (cachedFiles.isNotEmpty()) {
-                        currentAlbumSongs = cachedFiles
-                        // 设置专辑封面映射
-                        playlistController.setSongAlbumCovers(cachedFiles, album.coverImageUrl)
-                        // 加载缓存封面
-                        playlistController.loadCachedCovers(context, cachedFiles)
-                    }
+                // 先加载缓存数据（如果有）
+                val cachedFiles = PlaylistCache.load(context, album.id)
+                if (cachedFiles.isNotEmpty()) {
+                    currentAlbumSongs = cachedFiles
+                    // 设置专辑封面映射
+                    playlistController.setSongAlbumCovers(cachedFiles, effectiveCoverImageUrl)
+                    // 加载缓存封面
+                    playlistController.loadCachedCovers(context, cachedFiles)
+                }
 
+                try {
                     // 尝试获取最新数据并提取元数据
                     val webDavClient = WebDavClient()
-                    val effectiveConfig = if (album.directoryUrl != null) {
-                        webDavConfig.copy(url = album.directoryUrl)
+
+                    val fetchResult = if (serverConfig != null) {
+                        // 按候选地址顺序尝试，某个地址请求失败时自动换下一个候选地址重试
+                        ServerAddressResolver.withReachableAddress(serverConfig) { baseUrl ->
+                            val directoryUrl = resolveAlbumUrl(album.directoryUrl, baseUrl) ?: baseUrl
+                            webDavClient.fetchMusicFiles(
+                                serverConfig.toWebDavConfig(baseUrl).copy(url = directoryUrl),
+                                context,
+                                serverConfig.id
+                            ) { current, total ->
+                                metadataExtractionProgress = current to total
+                                isExtractingMetadata = true
+                            }
+                        }
                     } else {
-                        webDavConfig
+                        val effectiveConfig = if (album.directoryUrl != null) {
+                            webDavConfig.copy(url = album.directoryUrl)
+                        } else {
+                            webDavConfig
+                        }
+                        webDavClient.fetchMusicFiles(effectiveConfig, context) { current, total ->
+                            metadataExtractionProgress = current to total
+                            isExtractingMetadata = true
+                        }
                     }
 
-                    webDavClient.fetchMusicFiles(effectiveConfig, context) { current, total ->
-                        metadataExtractionProgress = current to total
-                        isExtractingMetadata = true
-                    }
+                    fetchResult
                         .onSuccess { files ->
                             currentAlbumSongs = files
-                            PlaylistCache.save(
-                                context,
-                                album.directoryUrl,
-                                files
-                            )
+                            PlaylistCache.save(context, album.id, files)
                             // 设置专辑封面映射
-                            playlistController.setSongAlbumCovers(files, album.coverImageUrl)
+                            playlistController.setSongAlbumCovers(files, effectiveCoverImageUrl)
                             // 设置 WebDAV 配置
                             playlistController.setCurrentWebDavConfig(webDavConfig)
                             // 加载缓存封面
@@ -175,10 +196,6 @@ fun AlbumDetailScreen(
                         }
                 } catch (e: Exception) {
                     // 如果已经有缓存数据，显示提示
-                    val cachedFiles = PlaylistCache.load(
-                        context,
-                        album.directoryUrl
-                    )
                     if (cachedFiles.isNotEmpty()) {
                         Toast.makeText(
                             context,
@@ -300,7 +317,7 @@ fun AlbumDetailScreen(
                             playlistController.loadPlaylist(currentAlbumSongs)
                             playlistController.setSongAlbumCovers(
                                 currentAlbumSongs,
-                                album.coverImageUrl
+                                effectiveCoverImageUrl
                             )
                             playlistController.setCurrentWebDavConfig(webDavConfig)
                             playlistController.loadCachedCovers(context, currentAlbumSongs)

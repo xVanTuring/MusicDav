@@ -5,6 +5,7 @@ import android.util.Log
 import tech.xvanturing.musicdav.data.MusicFile
 import tech.xvanturing.musicdav.data.MusicMetadataCache
 import tech.xvanturing.musicdav.data.WebDavConfig
+import tech.xvanturing.musicdav.data.cacheKey
 import tech.xvanturing.musicdav.data.extractMusicMetadata
 import tech.xvanturing.musicdav.player.CoverCache
 import com.thegrizzlylabs.sardineandroid.DavResource
@@ -23,6 +24,7 @@ class WebDavClient {
     suspend fun fetchMusicFiles(
         config: WebDavConfig,
         context: Context,
+        serverConfigId: String? = null,
         onProgress: (Int, Int) -> Unit = { _, _ -> }
     ): Result<List<MusicFile>> = withContext(Dispatchers.IO) {
         try {
@@ -45,15 +47,16 @@ class WebDavClient {
                         url = fullUrl,
                         path = resource.path,
                         size = resource.contentLength ?: 0L,
-                        modifiedDate = resource.modified?.time ?: 0L
+                        modifiedDate = resource.modified?.time ?: 0L,
+                        serverConfigId = serverConfigId
                     )
                 }
                 .sortedBy { it.name }
 
             Log.d("WebDavClient", "Found ${musicFiles.size} music files")
 
-            val metadataMap = MusicMetadataCache.getBatch(context, musicFiles.map { it.url })
-            val filesWithoutMetadata = musicFiles.filter { !metadataMap.containsKey(it.url) }
+            val metadataMap = MusicMetadataCache.getBatch(context, musicFiles.map { it.cacheKey })
+            val filesWithoutMetadata = musicFiles.filter { !metadataMap.containsKey(it.cacheKey) }
 
             Log.d("WebDavClient", "Cached metadata: ${metadataMap.size}, Need extraction: ${filesWithoutMetadata.size}")
 
@@ -63,17 +66,17 @@ class WebDavClient {
                     try {
                         val extractedMetadata = extractMusicMetadata(context, file, config)
                         val cachedMetadata = tech.xvanturing.musicdav.data.CachedMetadata(
-                            url = file.url,
+                            url = file.cacheKey,
                             title = extractedMetadata.title,
                             artist = extractedMetadata.artist,
                             album = extractedMetadata.album,
                             durationMs = extractedMetadata.durationMs
                         )
                         MusicMetadataCache.save(context, cachedMetadata)
-                        
+
                         extractedMetadata.coverArt?.let { coverArt ->
                             launch {
-                                CoverCache.saveCover(context, file.url, coverArt.imageData, coverArt.mimeType)
+                                CoverCache.saveCover(context, file.cacheKey, coverArt.imageData, coverArt.mimeType)
                             }
                         }
                     } catch (e: Exception) {
@@ -82,10 +85,10 @@ class WebDavClient {
                 }
             }
 
-            val updatedMetadataMap = MusicMetadataCache.getBatch(context, musicFiles.map { it.url })
+            val updatedMetadataMap = MusicMetadataCache.getBatch(context, musicFiles.map { it.cacheKey })
 
             val enrichedMusicFiles = musicFiles.map { file ->
-                updatedMetadataMap[file.url]?.let { metadata ->
+                updatedMetadataMap[file.cacheKey]?.let { metadata ->
                     file.copy(
                         title = metadata.title,
                         artist = metadata.artist,
@@ -243,5 +246,31 @@ class WebDavClient {
     fun getAuthHeaders(username: String, password: String): Map<String, String> {
         val credentials = Credentials.basic(username, password)
         return mapOf("Authorization" to credentials)
+    }
+
+    // Lightweight reachability probe used to pick a working address among a server's candidates.
+    // Any HTTP response (even 401/404) proves the host is reachable; only network-level failures
+    // (timeout, connection refused, unknown host) count as unreachable.
+    suspend fun probeReachable(
+        url: String,
+        username: String,
+        password: String,
+        timeoutMs: Long = 2500
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (url.isBlank()) return@withContext false
+        try {
+            val client = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .readTimeout(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .build()
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .header("Authorization", Credentials.basic(username, password))
+                .head()
+                .build()
+            client.newCall(request).execute().use { true }
+        } catch (e: Exception) {
+            false
+        }
     }
 }

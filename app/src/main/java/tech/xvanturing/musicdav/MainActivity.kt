@@ -133,23 +133,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                 // 不自动导航到专辑详情，保持在列表页面
             },
             onDeleteAlbum = { album ->
-                val updated = albums.filterNot {
-                    val itConfig = if (it.serverConfigId != null) {
-                        tech.xvanturing.musicdav.data.ServerConfigRepository.load(context)
-                            .find { config -> config.id == it.serverConfigId }
-                            ?.toWebDavConfig() ?: it.config
-                    } else {
-                        it.config
-                    }
-                    val albumConfig = if (album.serverConfigId != null) {
-                        tech.xvanturing.musicdav.data.ServerConfigRepository.load(context)
-                            .find { config -> config.id == album.serverConfigId }
-                            ?.toWebDavConfig() ?: album.config
-                    } else {
-                        album.config
-                    }
-                    it.name == album.name && itConfig.url == albumConfig.url
-                }
+                val updated = albums.filterNot { it.id == album.id }
                 albums = updated
                 tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updated)
             },

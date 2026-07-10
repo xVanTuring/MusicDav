@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CheckCircle
 import tech.xvanturing.musicdav.data.MusicFile
+import tech.xvanturing.musicdav.data.cacheKey
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import okhttp3.Credentials
@@ -167,7 +168,7 @@ fun MusicListItem(
     cacheManager: tech.xvanturing.musicdav.player.CacheManager? = null,
     playlistController: tech.xvanturing.musicdav.player.PlaylistStateController? = null
 ) {
-    val isCached = cacheManager?.state?.cachedSongs?.any { it.url == musicFile.url } ?: false
+    val isCached = cacheManager?.state?.cachedSongs?.any { it.url == musicFile.cacheKey } ?: false
     val isCaching = cacheManager?.state?.cachingProgress?.containsKey(musicFile.url) ?: false
 
     val cachedCoverUrl = playlistController?.state?.cachedCoverMap?.get(musicFile.url)

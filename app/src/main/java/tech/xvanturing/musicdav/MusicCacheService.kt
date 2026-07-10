@@ -81,6 +81,7 @@ class MusicCacheService : Service() {
                 put("path", musicFile.path)
                 put("size", musicFile.size)
                 put("modifiedDate", musicFile.modifiedDate)
+                if (musicFile.serverConfigId != null) put("serverConfigId", musicFile.serverConfigId)
             }.toString()
         }
 
@@ -91,7 +92,8 @@ class MusicCacheService : Service() {
                 url = obj.optString("url", ""),
                 path = obj.optString("path", ""),
                 size = obj.optLong("size", 0L),
-                modifiedDate = obj.optLong("modifiedDate", 0L)
+                modifiedDate = obj.optLong("modifiedDate", 0L),
+                serverConfigId = if (obj.has("serverConfigId")) obj.optString("serverConfigId", null) else null
             )
         }
 

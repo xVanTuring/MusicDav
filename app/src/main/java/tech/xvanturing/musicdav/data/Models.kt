@@ -8,16 +8,27 @@ data class WebDavConfig(
     val password: String = ""
 )
 
-// Server configuration for WebDAV
+// Server configuration for WebDAV.
+// urls holds every candidate address for the same server (e.g. LAN IP + public domain),
+// ordered by preference; the app probes them in order and uses the first reachable one.
 data class ServerConfig(
     val id: String,
     val name: String,
-    val url: String,
+    val urls: List<String>,
     val username: String,
     val password: String
 ) {
-    fun toWebDavConfig(): WebDavConfig {
-        return WebDavConfig(url, username, password)
+    val url: String
+        get() = urls.firstOrNull { it.isNotBlank() } ?: urls.firstOrNull() ?: ""
+
+    fun toWebDavConfig(resolvedUrl: String? = null): WebDavConfig {
+        return WebDavConfig(resolvedUrl ?: url, username, password)
+    }
+
+    companion object {
+        fun single(id: String, name: String, url: String, username: String, password: String): ServerConfig {
+            return ServerConfig(id, name, listOf(url), username, password)
+        }
     }
 }
 
@@ -30,12 +41,21 @@ data class MusicFile(
     val title: String? = null,
     val artist: String? = null,
     val album: String? = null,
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    // Server this file was fetched from; lets cache keys stay stable across server address changes
+    val serverConfigId: String? = null
 ) {
     val displayName: String
         get() = title?.takeIf { it.isNotBlank() }
             ?: name.substringBeforeLast('.')
 }
+
+// Stable cache identity for a music file: tied to the server + relative path rather than
+// the resolved absolute URL, so caches survive a server address change (see ServerConfig.urls).
+val MusicFile.cacheKey: String
+    get() = serverConfigId?.takeIf { it.isNotBlank() && path.isNotBlank() }
+        ?.let { "$it::$path" }
+        ?: url
 
 // 播放模式枚举
 enum class PlayMode {
@@ -99,7 +119,10 @@ enum class PlayMode {
         get() = currentIndex > 0
 }
 
-// Album configuration for a playlist
+// Album configuration for a playlist.
+// When serverConfigId is set, directoryUrl/coverImageUrl are stored as paths relative to the
+// linked ServerConfig's address (so changing that address doesn't break the album). When
+// serverConfigId is null (manual/legacy config), they remain absolute URLs as before.
  data class Album(
     val id: String,
     val name: String,
@@ -109,7 +132,8 @@ enum class PlayMode {
     val serverConfigId: String? = null  // Reference to ServerConfig, if null use config directly
 )
 
-// Helper function to get WebDavConfig from Album
+// Helper function to get WebDavConfig from Album (uses the server's primary/legacy url,
+// without probing candidate addresses; prefer ServerAddressResolver where network calls happen)
 fun Album.getWebDavConfig(context: android.content.Context): WebDavConfig {
     return if (serverConfigId != null) {
         ServerConfigRepository.load(context)
@@ -118,6 +142,32 @@ fun Album.getWebDavConfig(context: android.content.Context): WebDavConfig {
             ?: config
     } else {
         config
+    }
+}
+
+// Resolves a stored directoryUrl/coverImageUrl against the currently resolved server base URL.
+// Absolute values (legacy or manual-config albums) are returned as-is; relative paths are joined
+// with baseServerUrl.
+fun resolveAlbumUrl(storedValue: String?, baseServerUrl: String): String? {
+    if (storedValue == null) return null
+    if (storedValue.startsWith("http://") || storedValue.startsWith("https://")) return storedValue
+    val base = baseServerUrl.trimEnd('/')
+    val relative = if (storedValue.startsWith("/")) storedValue else "/$storedValue"
+    return "$base$relative"
+}
+
+// Converts an absolute URL into a path relative to baseServerUrl, if it actually lives under it;
+// otherwise returns the URL unchanged (kept absolute, e.g. cover picked from a different host).
+fun relativizeAlbumUrl(absoluteUrl: String?, baseServerUrl: String): String? {
+    if (absoluteUrl == null) return null
+    if (!absoluteUrl.startsWith("http://") && !absoluteUrl.startsWith("https://")) return absoluteUrl
+    return try {
+        val base = java.net.URL(baseServerUrl.trimEnd('/'))
+        val target = java.net.URL(absoluteUrl)
+        val sameHost = base.host.equals(target.host, ignoreCase = true) && base.port == target.port
+        if (sameHost) target.path.ifEmpty { "/" } else absoluteUrl
+    } catch (e: Exception) {
+        absoluteUrl
     }
 }
 
@@ -168,11 +218,18 @@ object ServerConfigRepository {
             val obj = arr.optJSONObject(i) ?: continue
             val id = obj.optString("id", "")
             val name = obj.optString("name", "")
-            val url = obj.optString("url", "")
+            val urls = if (obj.has("urls")) {
+                val urlsArr = obj.optJSONArray("urls") ?: org.json.JSONArray()
+                (0 until urlsArr.length()).mapNotNull { urlsArr.optString(it, null) }
+                    .filter { it.isNotBlank() }
+            } else {
+                // Legacy single-url format
+                listOfNotNull(obj.optString("url", "").takeIf { it.isNotBlank() })
+            }
             val username = obj.optString("username", "")
             val password = obj.optString("password", "")
-            if (id.isNotBlank() && name.isNotBlank()) {
-                result.add(ServerConfig(id, name, url, username, password))
+            if (id.isNotBlank() && name.isNotBlank() && urls.isNotEmpty()) {
+                result.add(ServerConfig(id, name, urls, username, password))
             }
         }
         return result
@@ -184,6 +241,8 @@ object ServerConfigRepository {
             val obj = org.json.JSONObject()
             obj.put("id", config.id)
             obj.put("name", config.name)
+            obj.put("urls", org.json.JSONArray(config.urls))
+            // Kept for backward compatibility with older app versions reading this prefs file
             obj.put("url", config.url)
             obj.put("username", config.username)
             obj.put("password", config.password)
@@ -201,12 +260,42 @@ object ServerConfigRepository {
     fun load(context: android.content.Context): List<Album> {
         val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
         val json = prefs.getString(KEY_ALBUMS, "[]") ?: "[]"
-        return parseAlbums(json)
+        val albums = parseAlbums(json)
+        val migrated = migrateToRelativePaths(context, albums)
+        if (migrated !== albums) {
+            save(context, migrated)
+        }
+        return migrated
     }
 
     fun save(context: android.content.Context, albums: List<Album>) {
         val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
         prefs.edit { putString(KEY_ALBUMS, toJson(albums)) }
+    }
+
+    // One-time migration for existing installs: albums linked to a ServerConfig used to store
+    // directoryUrl/coverImageUrl as absolute URLs baked with that server's host at creation time.
+    // Rewrite them to paths relative to the server's current address so future address changes
+    // (see ServerConfig.urls) don't break the album.
+    private fun migrateToRelativePaths(context: android.content.Context, albums: List<Album>): List<Album> {
+        if (albums.none { it.serverConfigId != null }) return albums
+        val serverConfigs = ServerConfigRepository.load(context)
+        if (serverConfigs.isEmpty()) return albums
+
+        var changed = false
+        val result = albums.map { album ->
+            val serverConfigId = album.serverConfigId ?: return@map album
+            val server = serverConfigs.find { it.id == serverConfigId } ?: return@map album
+            val newDirectoryUrl = relativizeAlbumUrl(album.directoryUrl, server.url)
+            val newCoverImageUrl = relativizeAlbumUrl(album.coverImageUrl, server.url)
+            if (newDirectoryUrl != album.directoryUrl || newCoverImageUrl != album.coverImageUrl) {
+                changed = true
+                album.copy(directoryUrl = newDirectoryUrl, coverImageUrl = newCoverImageUrl)
+            } else {
+                album
+            }
+        }
+        return if (changed) result else albums
     }
 
     private fun parseAlbums(json: String): List<Album> {
@@ -264,31 +353,24 @@ object ServerConfigRepository {
     }
 }
 
-// Playlist cache for storing music files
+// Playlist cache for storing music files, keyed by album id (stable regardless of server address)
 object PlaylistCache {
     private const val PREF_NAME = "playlist_cache_prefs"
-    
-    private fun getCacheKey(directoryUrl: String?): String {
-        return directoryUrl ?: "default"
-    }
-    
-    fun load(context: android.content.Context, directoryUrl: String?): List<MusicFile> {
+
+    fun load(context: android.content.Context, albumId: String): List<MusicFile> {
         val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
-        val key = getCacheKey(directoryUrl)
-        val json = prefs.getString(key, "[]") ?: "[]"
+        val json = prefs.getString(albumId, "[]") ?: "[]"
         return parseMusicFiles(json)
     }
-    
-    fun save(context: android.content.Context, directoryUrl: String?, musicFiles: List<MusicFile>) {
+
+    fun save(context: android.content.Context, albumId: String, musicFiles: List<MusicFile>) {
         val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
-        val key = getCacheKey(directoryUrl)
-        prefs.edit { putString(key, toJson(musicFiles)) }
+        prefs.edit { putString(albumId, toJson(musicFiles)) }
     }
 
-    fun clear(context: android.content.Context, directoryUrl: String?) {
+    fun clear(context: android.content.Context, albumId: String) {
         val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
-        val key = getCacheKey(directoryUrl)
-        prefs.edit { remove(key) }
+        prefs.edit { remove(albumId) }
     }
     
     private fun parseMusicFiles(json: String): List<MusicFile> {
@@ -305,11 +387,12 @@ object PlaylistCache {
             val artist = if (obj.has("artist")) obj.optString("artist", null).takeIf { !it.isNullOrEmpty() } else null
             val album = if (obj.has("album")) obj.optString("album", null).takeIf { !it.isNullOrEmpty() } else null
             val durationMs = obj.optLong("durationMs", 0L)
-            result.add(MusicFile(name, url, path, size, modifiedDate, title, artist, album, durationMs))
+            val serverConfigId = if (obj.has("serverConfigId")) obj.optString("serverConfigId", null).takeIf { !it.isNullOrEmpty() } else null
+            result.add(MusicFile(name, url, path, size, modifiedDate, title, artist, album, durationMs, serverConfigId))
         }
         return result
     }
-    
+
     private fun toJson(musicFiles: List<MusicFile>): String {
         val arr = org.json.JSONArray()
         for (file in musicFiles) {
@@ -323,6 +406,7 @@ object PlaylistCache {
             if (file.artist != null) obj.put("artist", file.artist)
             if (file.album != null) obj.put("album", file.album)
             obj.put("durationMs", file.durationMs)
+            if (file.serverConfigId != null) obj.put("serverConfigId", file.serverConfigId)
             arr.put(obj)
         }
         return arr.toString()

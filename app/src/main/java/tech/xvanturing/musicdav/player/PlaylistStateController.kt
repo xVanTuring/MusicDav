@@ -21,6 +21,7 @@ import tech.xvanturing.musicdav.data.MusicMetadataCache
 import tech.xvanturing.musicdav.data.PlaylistState
 import tech.xvanturing.musicdav.data.PlayMode
 import tech.xvanturing.musicdav.data.WebDavConfig
+import tech.xvanturing.musicdav.data.cacheKey
 import tech.xvanturing.musicdav.MusicCacheService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -441,7 +442,7 @@ class PlaylistStateController {
     fun loadCachedCovers(context: android.content.Context, songs: List<MusicFile>) {
         val newCachedCovers = mutableMapOf<String, String>()
         for (song in songs) {
-            CoverCache.getCoverPath(context, song.url)?.let { path ->
+            CoverCache.getCoverPath(context, song.cacheKey)?.let { path ->
                 newCachedCovers[song.url] = path
                 Log.d("PlaylistStateController", "Cached cover found for: ${song.name} -> $path")
             }
@@ -459,7 +460,7 @@ class PlaylistStateController {
         context?.let { ctx ->
             val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
             scope.launch {
-                val isCached = MusicCache.isCached(ctx, currentSong.url)
+                val isCached = MusicCache.isCached(ctx, currentSong.cacheKey)
                 if (!isCached) {
                     Log.d(
                         "PlaylistStateController",
@@ -480,7 +481,7 @@ class PlaylistStateController {
             context?.let { ctx ->
                 val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
                 scope.launch {
-                    val isCached = MusicCache.isCached(ctx, nextSong.url)
+                    val isCached = MusicCache.isCached(ctx, nextSong.cacheKey)
                     if (!isCached) {
                         Log.d(
                             "PlaylistStateController",
