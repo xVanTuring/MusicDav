@@ -35,6 +35,9 @@ import tech.xvanturing.musicdav.ui.screen.AlbumCreateForm
 import tech.xvanturing.musicdav.ui.screen.AlbumDetailScreen
 import tech.xvanturing.musicdav.ui.screen.AlbumListScreen
 import tech.xvanturing.musicdav.ui.screen.CacheManagementScreen
+import tech.xvanturing.musicdav.ui.screen.FavoritesScreen
+import tech.xvanturing.musicdav.ui.screen.NowPlayingScreen
+import tech.xvanturing.musicdav.ui.screen.SearchScreen
 import tech.xvanturing.musicdav.ui.screen.ServerConfigCreateScreen
 import tech.xvanturing.musicdav.ui.screen.ServerConfigListScreen
 import tech.xvanturing.musicdav.ui.theme.MusicDavTheme
@@ -67,6 +70,9 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     }
     var selectedAlbum by remember { mutableStateOf<tech.xvanturing.musicdav.data.Album?>(null) }
     var editingAlbum by remember { mutableStateOf<tech.xvanturing.musicdav.data.Album?>(null) }
+    var showFavorites by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+    var showNowPlaying by remember { mutableStateOf(false) }
     val playlistController = rememberPlaylistStateController()
 
     // 处理通知权限
@@ -74,7 +80,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
 
     // 在主页面的返回键处理：双击退出
     var lastBackPressTime by remember { mutableLongStateOf(0L) }
-    androidx.activity.compose.BackHandler(enabled = selectedAlbum == null && editingAlbum == null) {
+    androidx.activity.compose.BackHandler(enabled = selectedAlbum == null && editingAlbum == null && !showFavorites && !showSearch && !showNowPlaying) {
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastBackPressTime < 2000) {
             // 两次点击间隔小于2秒，退出应用
@@ -90,64 +96,92 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
         }
     }
 
-    if (editingAlbum != null) {
-        // Show edit form
-        AlbumCreateForm(
-            onCancel = { editingAlbum = null },
-            onSave = { name, url, username, password, directoryUrl, coverImageUrl, serverConfigId ->
-                val config = tech.xvanturing.musicdav.data.WebDavConfig(
-                    url = url,
-                    username = username,
-                    password = password
-                )
-                val updatedAlbum = editingAlbum!!.copy(
-                    name = name,
-                    config = config,
-                    directoryUrl = directoryUrl,
-                    coverImageUrl = coverImageUrl,
-                    serverConfigId = serverConfigId
-                )
-                // Update the album in the list
-                val updatedAlbums = albums.map { if (it == editingAlbum) updatedAlbum else it }
-                albums = updatedAlbums
-                tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updatedAlbums)
-                // Update selected album if it's the same one
-                if (selectedAlbum == editingAlbum) {
-                    selectedAlbum = updatedAlbum
-                }
-                editingAlbum = null
-            },
-            editingAlbum = editingAlbum
-        )
-    } else if (selectedAlbum == null) {
-        MainTabScreen(
-            albums = albums,
-            onRefreshAlbums = {
-                albums = tech.xvanturing.musicdav.data.AlbumsRepository.load(context)
-            },
-            onSelectAlbum = { selectedAlbum = it },
-            onCreateAlbum = { album, serverConfigId ->
-                val updated = albums + album
-                albums = updated
-                tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updated)
-                // 不自动导航到专辑详情，保持在列表页面
-            },
-            onDeleteAlbum = { album ->
-                val updated = albums.filterNot { it.id == album.id }
-                albums = updated
-                tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updated)
-            },
-            playlistController = playlistController,
-            modifier = modifier
-        )
-    } else {
-        AlbumDetailScreen(
-            album = selectedAlbum!!,
-            onBack = { selectedAlbum = null },
-            onEdit = { album -> editingAlbum = album },
-            playlistController = playlistController,
-            modifier = modifier
-        )
+    Box(modifier = modifier) {
+        if (editingAlbum != null) {
+            // Show edit form
+            AlbumCreateForm(
+                onCancel = { editingAlbum = null },
+                onSave = { name, url, username, password, directoryUrl, coverImageUrl, serverConfigId ->
+                    val config = tech.xvanturing.musicdav.data.WebDavConfig(
+                        url = url,
+                        username = username,
+                        password = password
+                    )
+                    val updatedAlbum = editingAlbum!!.copy(
+                        name = name,
+                        config = config,
+                        directoryUrl = directoryUrl,
+                        coverImageUrl = coverImageUrl,
+                        serverConfigId = serverConfigId
+                    )
+                    // Update the album in the list
+                    val updatedAlbums = albums.map { if (it == editingAlbum) updatedAlbum else it }
+                    albums = updatedAlbums
+                    tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updatedAlbums)
+                    // Update selected album if it's the same one
+                    if (selectedAlbum == editingAlbum) {
+                        selectedAlbum = updatedAlbum
+                    }
+                    editingAlbum = null
+                },
+                editingAlbum = editingAlbum
+            )
+        } else if (showFavorites) {
+            FavoritesScreen(
+                onBack = { showFavorites = false },
+                onOpenNowPlaying = { showNowPlaying = true },
+                playlistController = playlistController,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (showSearch) {
+            SearchScreen(
+                onBack = { showSearch = false },
+                onOpenNowPlaying = { showNowPlaying = true },
+                playlistController = playlistController,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (selectedAlbum == null) {
+            MainTabScreen(
+                albums = albums,
+                onRefreshAlbums = {
+                    albums = tech.xvanturing.musicdav.data.AlbumsRepository.load(context)
+                },
+                onSelectAlbum = { selectedAlbum = it },
+                onCreateAlbum = { album, serverConfigId ->
+                    val updated = albums + album
+                    albums = updated
+                    tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updated)
+                    // 不自动导航到专辑详情，保持在列表页面
+                },
+                onDeleteAlbum = { album ->
+                    val updated = albums.filterNot { it.id == album.id }
+                    albums = updated
+                    tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updated)
+                },
+                onOpenFavorites = { showFavorites = true },
+                onOpenSearch = { showSearch = true },
+                onOpenNowPlaying = { showNowPlaying = true },
+                playlistController = playlistController,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            AlbumDetailScreen(
+                album = selectedAlbum!!,
+                onBack = { selectedAlbum = null },
+                onOpenNowPlaying = { showNowPlaying = true },
+                onEdit = { album -> editingAlbum = album },
+                playlistController = playlistController,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        if (showNowPlaying) {
+            NowPlayingScreen(
+                playlistController = playlistController,
+                onBack = { showNowPlaying = false },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
 
@@ -159,6 +193,9 @@ fun MainTabScreen(
     onSelectAlbum: (tech.xvanturing.musicdav.data.Album) -> Unit,
     onCreateAlbum: (tech.xvanturing.musicdav.data.Album, String?) -> Unit,
     onDeleteAlbum: (tech.xvanturing.musicdav.data.Album) -> Unit,
+    onOpenFavorites: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenNowPlaying: () -> Unit = {},
     playlistController: tech.xvanturing.musicdav.player.PlaylistStateController,
     modifier: Modifier = Modifier
 ) {
@@ -253,6 +290,7 @@ fun MainTabScreen(
                     onTogglePlayMode = {
                         playlistController.togglePlayMode()
                     },
+                    onOpenNowPlaying = onOpenNowPlaying,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -314,6 +352,8 @@ fun MainTabScreen(
                         onDelete = onDeleteAlbum,
                         onAddButtonClick = { creatingAlbum = true },
                         onImportSuccess = { onRefreshAlbums() },
+                        onOpenFavorites = onOpenFavorites,
+                        onOpenSearch = onOpenSearch,
                         modifier = Modifier.fillMaxSize()
                     )
                 }

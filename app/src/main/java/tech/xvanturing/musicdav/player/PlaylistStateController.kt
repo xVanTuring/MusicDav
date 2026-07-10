@@ -82,6 +82,18 @@ class PlaylistStateController {
         _state.value = _state.value.copy(currentWebDavConfig = webDavConfig)
     }
 
+    // 设置歌曲到其所属服务器配置的映射（收藏夹/搜索结果等跨服务器播放列表使用）
+    fun setSongConfigs(configs: Map<String, WebDavConfig>) {
+        val merged = _state.value.songToConfigMap.toMutableMap()
+        merged.putAll(configs)
+        _state.value = _state.value.copy(songToConfigMap = merged)
+    }
+
+    fun seekTo(positionMs: Long) {
+        controller?.seekTo(positionMs)
+        _state.value = _state.value.copy(currentPosition = positionMs)
+    }
+
     suspend fun initialize(context: android.content.Context) {
         this.context = context
         val sessionToken = SessionToken(
@@ -135,13 +147,22 @@ class PlaylistStateController {
                                     cachedCoverMap = _state.value.cachedCoverMap // 保留缓存映射
                                 )
                                 
+                                // 播放列表内歌曲可能来自不同服务器（如收藏夹/搜索结果），
+                                // 按曲目切换鉴权信息，确保接下来的网络请求用对凭据
+                                val newCurrentSong = state.songs.getOrNull(currentIndex)
+                                val songConfig = newCurrentSong?.let { state.songToConfigMap[it.url] }
+                                if (songConfig != null) {
+                                    setCredentials(songConfig)
+                                    setCurrentWebDavConfig(songConfig)
+                                }
+                                val effectiveConfig = songConfig ?: state.currentWebDavConfig
+
                                 // 触发新歌曲缓存
                                 context.let { ctx ->
-                                    val newCurrentSong = state.songs.getOrNull(currentIndex)
-                                    if (newCurrentSong != null && state.currentWebDavConfig != null) {
+                                    if (newCurrentSong != null && effectiveConfig != null) {
                                         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                                             try {
-                                                MusicCacheService.startCaching(ctx, newCurrentSong, state.currentWebDavConfig!!)
+                                                MusicCacheService.startCaching(ctx, newCurrentSong, effectiveConfig)
                                                 Log.d("PlaylistStateController", "🎵 自动缓存: ${newCurrentSong.name}")
                                             } catch (e: Exception) {
                                                 Log.e("PlaylistStateController", "自动缓存失败", e)
@@ -267,6 +288,7 @@ class PlaylistStateController {
                 val mediaItems = state.songs.map { song ->
                     MediaItem.Builder()
                         .setUri(song.url)
+                        .setCustomCacheKey(song.cacheKey)
                         .build()
                 }
 
@@ -312,6 +334,7 @@ class PlaylistStateController {
                     val mediaItems = state.songs.map { song ->
                         MediaItem.Builder()
                             .setUri(song.url)
+                            .setCustomCacheKey(song.cacheKey)
                             .build()
                     }
                     // 先设置 Service 中 ExoPlayer 的播放列表

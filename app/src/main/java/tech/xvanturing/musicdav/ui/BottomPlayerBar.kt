@@ -2,6 +2,7 @@ package tech.xvanturing.musicdav.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -52,10 +53,11 @@ fun BottomPlayerBar(
     onNext: () -> Unit,
     onPrevious: () -> Unit,
     onTogglePlayMode: () -> Unit = {},
+    onOpenNowPlaying: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
 //    if (playlistState.currentSong == null) return
-    
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         tonalElevation = 8.dp,
@@ -65,6 +67,10 @@ fun BottomPlayerBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable(
+                    enabled = playlistState.currentSong != null,
+                    onClick = onOpenNowPlaying
+                )
         ) {
             // Thin progress bar
             val rawProgress = if (playlistState.duration > 0) {
@@ -141,11 +147,12 @@ fun BottomPlayerBar(
                                  )
                              }
                              coverUrl.startsWith("http") -> {
-                                 if (playlistState.currentWebDavConfig != null &&
-                                     playlistState.currentWebDavConfig.username.isNotBlank() &&
-                                     playlistState.currentWebDavConfig.password.isNotBlank()) {
+                                 val effectiveConfig = playlistState.effectiveWebDavConfig
+                                 if (effectiveConfig != null &&
+                                     effectiveConfig.username.isNotBlank() &&
+                                     effectiveConfig.password.isNotBlank()) {
                                      val headers = NetworkHeaders.Builder()
-                                         .set("Authorization", Credentials.basic(playlistState.currentWebDavConfig.username, playlistState.currentWebDavConfig.password))
+                                         .set("Authorization", Credentials.basic(effectiveConfig.username, effectiveConfig.password))
                                          .build()
 
                                      AsyncImage(

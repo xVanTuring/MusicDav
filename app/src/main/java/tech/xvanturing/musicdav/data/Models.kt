@@ -83,10 +83,17 @@ enum class PlayMode {
     // 播放模式
     val playMode: PlayMode = PlayMode.PLAY_ONCE,
     // 缓存的内嵌封面（文件 URL → 本地缓存路径）
-    val cachedCoverMap: Map<String, String> = emptyMap()
+    val cachedCoverMap: Map<String, String> = emptyMap(),
+    // 歌曲URL到其所属服务器WebDAV配置的映射，用于播放列表内歌曲来自不同服务器时
+    // （如收藏夹、搜索结果）按曲目切换鉴权信息；单一来源的播放列表可不设置，回退用 currentWebDavConfig
+    val songToConfigMap: Map<String, WebDavConfig> = emptyMap()
 ) {
     val currentSong: MusicFile?
         get() = songs.getOrNull(currentIndex)
+
+    // 当前歌曲实际应使用的 WebDAV 配置：优先按曲目查表，否则回退到播放列表统一配置
+    val effectiveWebDavConfig: WebDavConfig?
+        get() = currentSong?.let { songToConfigMap[it.url] } ?: currentWebDavConfig
 
     // 获取当前歌曲的封面URL，优先级：缓存封面 > 内嵌封面 > 专辑封面 > 默认占位符
     val currentCoverUrl: String?

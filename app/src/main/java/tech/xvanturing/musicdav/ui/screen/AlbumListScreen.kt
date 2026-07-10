@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,7 +24,9 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,10 +61,13 @@ import okhttp3.Credentials
 import tech.xvanturing.musicdav.data.Album
 import tech.xvanturing.musicdav.data.AlbumsRepository
 import tech.xvanturing.musicdav.data.ConfigExportManager
+import tech.xvanturing.musicdav.data.FavoritesRepository
 import tech.xvanturing.musicdav.data.ImportResult
 import tech.xvanturing.musicdav.data.ImportStrategy
 import tech.xvanturing.musicdav.data.ServerConfigRepository
+import tech.xvanturing.musicdav.data.favoritesCoverPath
 import tech.xvanturing.musicdav.data.getWebDavConfig
+import tech.xvanturing.musicdav.data.resolveAlbumUrl
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -76,10 +82,14 @@ fun AlbumListScreen(
     modifier: Modifier = Modifier,
     onAddButtonClick: (() -> Unit)? = null,
     onImportSuccess: () -> Unit = {},
+    onOpenFavorites: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
 
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val favorites = remember { FavoritesRepository.load(context) }
+    val favoritesCover = remember(favorites) { favoritesCoverPath(context, favorites) }
     var creating by remember { mutableStateOf(false) }
     var selectedAlbumForDelete by remember { mutableStateOf<Album?>(null) }
     var showImportStrategyDialog by remember { mutableStateOf(false) }
@@ -157,6 +167,12 @@ fun AlbumListScreen(
                 TopAppBar(
                     title = { Text("Albums") },
                     actions = {
+                        IconButton(onClick = onOpenSearch) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search"
+                            )
+                        }
                         IconButton(onClick = {
                             onAddButtonClick?.invoke() ?: run { creating = true }
                         }) {
@@ -192,6 +208,13 @@ fun AlbumListScreen(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    item {
+                        FavoritesGridItem(
+                            coverPath = favoritesCover,
+                            songCount = favorites.size,
+                            onClick = onOpenFavorites
+                        )
+                    }
                     items(albums) { album ->
                         AlbumGridItem(
                             album = album,
@@ -452,6 +475,69 @@ fun AlbumListScreen(
     }
 }
 
+@Composable
+fun FavoritesGridItem(
+    coverPath: String?,
+    songCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.Start
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f),
+            contentAlignment = Alignment.Center
+        ) {
+            if (coverPath != null) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(coverPath)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "收藏夹",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Favorite,
+                    contentDescription = "收藏夹",
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
+        Text(
+            text = "收藏夹",
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurface
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Start,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, start = 4.dp, end = 4.dp)
+        )
+        Text(
+            text = "$songCount 首歌曲",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 4.dp, end = 4.dp, bottom = 4.dp)
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AlbumGridItem(
@@ -470,8 +556,9 @@ fun AlbumGridItem(
             ),
         horizontalAlignment = Alignment.Start
     ) {
-        // 专辑封面
+        // 专辑封面（关联了服务器配置时 coverImageUrl 存的是相对路径，需要用当前服务器地址拼出完整URL）
         val webDavConfig = album.getWebDavConfig(context)
+        val effectiveCoverImageUrl = resolveAlbumUrl(album.coverImageUrl, webDavConfig.url)
         val headers = NetworkHeaders.Builder()
             .set("Authorization", Credentials.basic(webDavConfig.username, webDavConfig.password))
             .build()
@@ -482,10 +569,10 @@ fun AlbumGridItem(
                 .aspectRatio(1f),
             contentAlignment = Alignment.Center
         ) {
-            if (album.coverImageUrl != null) {
+            if (effectiveCoverImageUrl != null) {
                 AsyncImage(
                     model = ImageRequest.Builder(context)
-                        .data(album.coverImageUrl)
+                        .data(effectiveCoverImageUrl)
                         .httpHeaders(headers)
                         .crossfade(true)
                         .listener(

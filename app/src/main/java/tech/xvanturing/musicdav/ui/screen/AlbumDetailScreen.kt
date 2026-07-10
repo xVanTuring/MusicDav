@@ -34,6 +34,7 @@ import android.widget.Toast
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.mutableIntStateOf
 import tech.xvanturing.musicdav.data.Album
+import tech.xvanturing.musicdav.data.FavoritesRepository
 import tech.xvanturing.musicdav.data.ServerAddressResolver
 import tech.xvanturing.musicdav.data.ServerConfigRepository
 import tech.xvanturing.musicdav.data.resolveAlbumUrl
@@ -56,6 +57,7 @@ fun AlbumDetailScreen(
     playlistController: PlaylistStateController,
     modifier: Modifier = Modifier,
     onEdit: (Album) -> Unit = {},
+    onOpenNowPlaying: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -70,6 +72,11 @@ fun AlbumDetailScreen(
     var metadataExtractionProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var hasTriedInitialRefresh by remember { mutableStateOf(false) }
     var forceRefreshKey by remember { mutableIntStateOf(0) }
+
+    // 收藏状态
+    var favoriteKeys by remember {
+        mutableStateOf(FavoritesRepository.load(context).map { it.musicFile.cacheKey }.toSet())
+    }
 
     // 缓存状态
     val cacheManager = remember { CacheManager(context) }
@@ -324,6 +331,16 @@ fun AlbumDetailScreen(
                             playlistController.setPlaylistAndPlay(index)
                         }
                     },
+                    enableFavorite = true,
+                    isFavorite = { musicFile -> favoriteKeys.contains(musicFile.cacheKey) },
+                    onToggleFavorite = { musicFile ->
+                        FavoritesRepository.toggle(
+                            context,
+                            musicFile,
+                            if (musicFile.serverConfigId == null) webDavConfig else null
+                        )
+                        favoriteKeys = FavoritesRepository.load(context).map { it.musicFile.cacheKey }.toSet()
+                    },
                     enableCache = true,
                     onCacheRequest = { musicFile ->
                         cacheManager.cacheSong(
@@ -365,7 +382,8 @@ fun AlbumDetailScreen(
                             },
                             onTogglePlayMode = {
                                 playlistController.togglePlayMode()
-                            }
+                            },
+                            onOpenNowPlaying = onOpenNowPlaying
                         )
                     },
                     cacheManager = cacheManager,

@@ -34,10 +34,12 @@ class CachedDataSource private constructor(
 
     override fun open(dataSpec: DataSpec): Long {
         currentDataSpec = dataSpec
-        val uri = dataSpec.uri.toString()
+        // dataSpec.key carries MediaItem.customCacheKey when set (see PlaylistStateController),
+        // which stays stable across server address changes; falls back to the raw URI otherwise.
+        val cacheKey = dataSpec.key ?: dataSpec.uri.toString()
 
         val cachedPath = runBlocking(Dispatchers.IO) {
-            MusicCache.getCachedPath(context, uri)
+            MusicCache.getCachedPath(context, cacheKey)
         }
 
         val result = if (cachedPath != null) {

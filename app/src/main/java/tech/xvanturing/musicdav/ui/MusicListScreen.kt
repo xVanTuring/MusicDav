@@ -27,8 +27,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import tech.xvanturing.musicdav.data.MusicFile
 import tech.xvanturing.musicdav.data.cacheKey
 import coil3.compose.AsyncImage
@@ -49,6 +52,9 @@ fun MusicListScreen(
     modifier: Modifier = Modifier,
     enableCache: Boolean = false,
     onCacheRequest: (MusicFile) -> Unit = {},
+    enableFavorite: Boolean = false,
+    isFavorite: (MusicFile) -> Boolean = { false },
+    onToggleFavorite: (MusicFile) -> Unit = {},
     cacheManager: tech.xvanturing.musicdav.player.CacheManager? = null,
     playlistController: tech.xvanturing.musicdav.player.PlaylistStateController? = null
 ) {
@@ -67,6 +73,9 @@ fun MusicListScreen(
             onSongSelected = onSongSelected,
             enableCache = enableCache,
             onCacheRequest = onCacheRequest,
+            enableFavorite = enableFavorite,
+            isFavorite = isFavorite,
+            onToggleFavorite = onToggleFavorite,
             context = context,
             cacheManager = cacheManager,
             playlistController = playlistController
@@ -84,6 +93,9 @@ private fun Content(
     onSongSelected: (Int, MusicFile) -> Unit,
     enableCache: Boolean,
     onCacheRequest: (MusicFile) -> Unit,
+    enableFavorite: Boolean = false,
+    isFavorite: (MusicFile) -> Boolean = { false },
+    onToggleFavorite: (MusicFile) -> Unit = {},
     context: android.content.Context,
     cacheManager: tech.xvanturing.musicdav.player.CacheManager? = null,
     playlistController: tech.xvanturing.musicdav.player.PlaylistStateController? = null
@@ -114,6 +126,9 @@ private fun Content(
                             onClick = { onSongSelected(index, musicFile) },
                             enableCache = enableCache,
                             onCacheRequest = onCacheRequest,
+                            enableFavorite = enableFavorite,
+                            isFavorite = isFavorite(musicFile),
+                            onToggleFavorite = { onToggleFavorite(musicFile) },
                             context = context,
                             cacheManager = cacheManager,
                             playlistController = playlistController
@@ -164,6 +179,9 @@ fun MusicListItem(
     modifier: Modifier = Modifier,
     enableCache: Boolean = false,
     onCacheRequest: (MusicFile) -> Unit = {},
+    enableFavorite: Boolean = false,
+    isFavorite: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
     context: android.content.Context? = null,
     cacheManager: tech.xvanturing.musicdav.player.CacheManager? = null,
     playlistController: tech.xvanturing.musicdav.player.PlaylistStateController? = null
@@ -173,7 +191,9 @@ fun MusicListItem(
 
     val cachedCoverUrl = playlistController?.state?.cachedCoverMap?.get(musicFile.url)
     val albumCoverUrl = playlistController?.state?.songToAlbumCoverMap?.get(musicFile.url)
-    val currentWebDavConfig = playlistController?.state?.currentWebDavConfig
+    // 该曲目所属服务器的配置优先（跨服务器列表如收藏夹/搜索结果），否则回退播放列表统一配置
+    val currentWebDavConfig = playlistController?.state?.songToConfigMap?.get(musicFile.url)
+        ?: playlistController?.state?.currentWebDavConfig
 
     val coverUrl = cachedCoverUrl ?: albumCoverUrl
 
@@ -255,32 +275,45 @@ fun MusicListItem(
                 )
             }
         },
-        trailingContent = if (enableCache && context != null) {
+        trailingContent = if (enableCache || enableFavorite) {
             {
-                IconButton(
-                    onClick = {
-                        if (!isCaching) {
-                            onCacheRequest(musicFile)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (enableFavorite) {
+                        IconButton(onClick = onToggleFavorite) {
+                            Icon(
+                                imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = if (isFavorite) "取消收藏" else "收藏",
+                                tint = if (isFavorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                    },
-                    enabled = !isCaching
-                ) {
-                    if (isCaching) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else if (isCached) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Cached",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Cache"
-                        )
+                    }
+                    if (enableCache && context != null) {
+                        IconButton(
+                            onClick = {
+                                if (!isCaching) {
+                                    onCacheRequest(musicFile)
+                                }
+                            },
+                            enabled = !isCaching
+                        ) {
+                            if (isCaching) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else if (isCached) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Cached",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "Cache"
+                                )
+                            }
+                        }
                     }
                 }
             }
