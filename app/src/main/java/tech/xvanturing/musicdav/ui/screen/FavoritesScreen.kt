@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import kotlinx.coroutines.launch
 import tech.xvanturing.musicdav.R
@@ -25,7 +26,6 @@ import tech.xvanturing.musicdav.data.WebDavConfig
 import tech.xvanturing.musicdav.data.resolvePlayable
 import tech.xvanturing.musicdav.player.CacheManager
 import tech.xvanturing.musicdav.player.PlaylistStateController
-import tech.xvanturing.musicdav.ui.BottomPlayerBar
 import tech.xvanturing.musicdav.ui.MusicListScreen
 import tech.xvanturing.musicdav.ui.components.AppTopBar
 
@@ -35,7 +35,7 @@ fun FavoritesScreen(
     onBack: () -> Unit,
     playlistController: PlaylistStateController,
     modifier: Modifier = Modifier,
-    onOpenNowPlaying: () -> Unit = {}
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -83,6 +83,7 @@ fun FavoritesScreen(
                         playlistController.loadPlaylist(songs)
                         playlistController.setSongConfigs(songConfigs)
                         playlistController.setCurrentWebDavConfig(songConfigs[tapped.url])
+                        playlistController.setCurrentAlbumId(null)
                         playlistController.loadCachedCovers(context, songs)
                         playlistController.setPlaylistAndPlay(index)
                     }
@@ -117,22 +118,7 @@ fun FavoritesScreen(
                         }
                     )
                 },
-                bottomBar = {
-                    BottomPlayerBar(
-                        playlistState = playlistController.state,
-                        onPlayPause = {
-                            if (playlistController.state.isPlaying) {
-                                playlistController.pause()
-                            } else {
-                                playlistController.play()
-                            }
-                        },
-                        onNext = { playlistController.seekToNext() },
-                        onPrevious = { playlistController.seekToPrevious() },
-                        onTogglePlayMode = { playlistController.togglePlayMode() },
-                        onOpenNowPlaying = onOpenNowPlaying
-                    )
-                },
+                bottomInset = bottomInset,
                 cacheManager = cacheManager,
                 playlistController = playlistController
             )

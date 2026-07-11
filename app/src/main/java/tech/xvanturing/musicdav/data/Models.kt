@@ -86,7 +86,9 @@ enum class PlayMode {
     val cachedCoverMap: Map<String, String> = emptyMap(),
     // 歌曲URL到其所属服务器WebDAV配置的映射，用于播放列表内歌曲来自不同服务器时
     // （如收藏夹、搜索结果）按曲目切换鉴权信息；单一来源的播放列表可不设置，回退用 currentWebDavConfig
-    val songToConfigMap: Map<String, WebDavConfig> = emptyMap()
+    val songToConfigMap: Map<String, WebDavConfig> = emptyMap(),
+    // 当前播放列表所属专辑的 id（单一专辑播放时设置；跨专辑列表如收藏夹/搜索为 null），用于首页胶片高亮旋转
+    val currentAlbumId: String? = null
 ) {
     val currentSong: MusicFile?
         get() = songs.getOrNull(currentIndex)

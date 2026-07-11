@@ -7,17 +7,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +36,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -61,9 +60,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,6 +76,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -154,6 +154,11 @@ fun AlbumListScreen(
     onImportSuccess: () -> Unit = {},
     onOpenFavorites: () -> Unit = {},
     onOpenSearch: () -> Unit = {},
+    bottomInset: Dp = 0.dp,
+    playingAlbumId: String? = null,
+    isPlaying: Boolean = false,
+    onPlayAlbum: (Album) -> Unit = {},
+    onTogglePlayPause: () -> Unit = {},
 
 ) {
     val context = LocalContext.current
@@ -315,7 +320,8 @@ fun AlbumListScreen(
                             onSelect = onSelect,
                             onOpenFavorites = onOpenFavorites,
                             onDeleteRequest = { selectedAlbumForDelete = it },
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            bottomInset = bottomInset
                         )
 
                         HomeViewMode.CAROUSEL -> CarouselHomeContent(
@@ -326,7 +332,12 @@ fun AlbumListScreen(
                             onSelect = onSelect,
                             onOpenFavorites = onOpenFavorites,
                             onDeleteRequest = { selectedAlbumForDelete = it },
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            bottomInset = bottomInset,
+                            playingAlbumId = playingAlbumId,
+                            isPlaying = isPlaying,
+                            onPlayAlbum = onPlayAlbum,
+                            onTogglePlayPause = onTogglePlayPause
                         )
                     }
                 }
@@ -641,13 +652,15 @@ private fun GridHomeContent(
     onSelect: (Album) -> Unit,
     onOpenFavorites: () -> Unit,
     onDeleteRequest: (Album) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    bottomInset: Dp = 0.dp
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = modifier
             .fillMaxSize()
             .padding(16.dp),
+        contentPadding = PaddingValues(bottom = bottomInset),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -948,38 +961,49 @@ private fun CarouselHomeContent(
     onSelect: (Album) -> Unit,
     onOpenFavorites: () -> Unit,
     onDeleteRequest: (Album) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    bottomInset: Dp = 0.dp,
+    playingAlbumId: String? = null,
+    isPlaying: Boolean = false,
+    onPlayAlbum: (Album) -> Unit = {},
+    onTogglePlayPause: () -> Unit = {}
 ) {
     val coroutineScope = rememberCoroutineScope()
     val entries = remember(albums) {
         listOf<HomeEntry>(HomeEntry.Favorites) + albums.map { HomeEntry.AlbumEntry(it) }
     }
-    val pagerState = rememberPagerState(pageCount = { entries.size })
+    // Infinite scroll: start deep inside the virtual page range, snapped to a multiple
+    // of entries.size so the initial page (mod size) is 0 — i.e. Favorites centered.
+    val startPage = remember(entries.size) {
+        val mid = Int.MAX_VALUE / 2
+        mid - (mid % entries.size)
+    }
+    val pagerState = rememberPagerState(initialPage = startPage, pageCount = { Int.MAX_VALUE })
 
-    // Single shared rotation clock; only the focused disc actually spins.
-    val infiniteTransition = rememberInfiniteTransition(label = "vinylRotation")
-    val rotation: State<Float> = infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 15000, easing = LinearEasing)
-        ),
-        label = "vinylRotation"
+    // Rotation is driven globally (see VinylRotationClock) so it stays in sync with the
+    // now-playing screen's big disc; only the disc matching playingAlbumId reads it (spin).
+    val fling = PagerDefaults.flingBehavior(
+        state = pagerState,
+        pagerSnapDistance = PagerSnapDistance.atMost(6),
+        snapPositionalThreshold = 0.75f
     )
 
     Column(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(bottom = bottomInset),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         HorizontalPager(
             state = pagerState,
             contentPadding = PaddingValues(horizontal = 64.dp),
             pageSpacing = 16.dp,
+            flingBehavior = fling,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
         ) { page ->
-            val entry = entries[page]
+            val entry = entries[page % entries.size]
             val isCentered = page == pagerState.currentPage
 
             Box(
@@ -1001,11 +1025,19 @@ private fun CarouselHomeContent(
                     .fillMaxWidth(0.92f)
                     .widthIn(max = 300.dp)
                     .combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
                         onClick = {
                             if (isCentered) {
                                 when (entry) {
                                     is HomeEntry.Favorites -> onOpenFavorites()
-                                    is HomeEntry.AlbumEntry -> onSelect(entry.album)
+                                    is HomeEntry.AlbumEntry -> {
+                                        if (playingAlbumId != null && entry.album.id == playingAlbumId) {
+                                            onTogglePlayPause()          // 已是当前专辑：播放/暂停切换
+                                        } else {
+                                            onPlayAlbum(entry.album)       // 换专辑：从头播放
+                                        }
+                                    }
                                 }
                             } else {
                                 coroutineScope.launch { pagerState.animateScrollToPage(page) }
@@ -1017,6 +1049,21 @@ private fun CarouselHomeContent(
                             }
                         }
                     )
+                    .pointerInput(isCentered, entry) {
+                        var dragY = 0f
+                        detectVerticalDragGestures(
+                            onDragEnd = {
+                                if (isCentered && dragY < -120f) {
+                                    when (entry) {
+                                        is HomeEntry.Favorites -> onOpenFavorites()
+                                        is HomeEntry.AlbumEntry -> onSelect(entry.album)
+                                    }
+                                }
+                                dragY = 0f
+                            },
+                            onVerticalDrag = { change, amount -> dragY += amount; change.consume() }
+                        )
+                    }
 
                 when (entry) {
                     is HomeEntry.Favorites -> {
@@ -1024,8 +1071,7 @@ private fun CarouselHomeContent(
                             coverUrl = favoritesCover,
                             headers = NetworkHeaders.EMPTY,
                             contentDescription = stringResource(R.string.common_favorites),
-                            spin = isCentered,
-                            rotation = rotation,
+                            spin = false,
                             placeholderIcon = Icons.Default.Favorite,
                             placeholderTint = MaterialTheme.colorScheme.error,
                             placeholderBackground = MaterialTheme.colorScheme.errorContainer,
@@ -1044,8 +1090,7 @@ private fun CarouselHomeContent(
                             coverUrl = effectiveCoverImageUrl,
                             headers = headers,
                             contentDescription = album.name,
-                            spin = isCentered,
-                            rotation = rotation,
+                            spin = playingAlbumId != null && album.id == playingAlbumId,
                             modifier = recordModifier
                         )
                     }
@@ -1053,18 +1098,16 @@ private fun CarouselHomeContent(
             }
         }
 
-        val currentEntry = entries.getOrNull(pagerState.currentPage)
+        val currentEntry = entries[pagerState.currentPage % entries.size]
         val title = when (currentEntry) {
             is HomeEntry.Favorites -> stringResource(R.string.common_favorites)
             is HomeEntry.AlbumEntry -> currentEntry.album.name
-            null -> ""
         }
         val songCount = when (currentEntry) {
             is HomeEntry.Favorites -> favoritesCount
             is HomeEntry.AlbumEntry -> remember(currentEntry.album.id) {
                 PlaylistCache.load(context, currentEntry.album.id).size
             }
-            null -> 0
         }
 
         Text(
@@ -1097,7 +1140,7 @@ private fun CarouselHomeContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             entries.forEachIndexed { index, _ ->
-                val active = index == pagerState.currentPage
+                val active = index == pagerState.currentPage % entries.size
                 Box(
                     modifier = Modifier
                         .padding(horizontal = 3.dp)
@@ -1124,7 +1167,6 @@ private fun VinylRecord(
     headers: NetworkHeaders,
     contentDescription: String?,
     spin: Boolean,
-    rotation: State<Float>,
     modifier: Modifier = Modifier,
     placeholderIcon: ImageVector = Icons.Default.MusicNote,
     placeholderTint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1140,7 +1182,7 @@ private fun VinylRecord(
     Box(
         modifier = modifier
             .aspectRatio(1f)
-            .graphicsLayer { rotationZ = if (spin) rotation.value else 0f }
+            .graphicsLayer { rotationZ = if (spin) tech.xvanturing.musicdav.ui.components.VinylRotationClock.angle else 0f }
             .clip(CircleShape)
             .background(VinylDiscColor),
         contentAlignment = Alignment.Center

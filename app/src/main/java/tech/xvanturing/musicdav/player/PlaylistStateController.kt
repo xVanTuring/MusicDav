@@ -82,6 +82,11 @@ class PlaylistStateController {
         _state.value = _state.value.copy(currentWebDavConfig = webDavConfig)
     }
 
+    // 设置当前播放列表所属专辑的 id（跨专辑列表传 null），用于首页胶片高亮旋转
+    fun setCurrentAlbumId(albumId: String?) {
+        _state.value = _state.value.copy(currentAlbumId = albumId)
+    }
+
     // 设置歌曲到其所属服务器配置的映射（收藏夹/搜索结果等跨服务器播放列表使用）
     fun setSongConfigs(configs: Map<String, WebDavConfig>) {
         val merged = _state.value.songToConfigMap.toMutableMap()

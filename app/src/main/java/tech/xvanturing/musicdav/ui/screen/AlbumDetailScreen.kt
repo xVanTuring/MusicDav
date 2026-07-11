@@ -1,11 +1,13 @@
 package tech.xvanturing.musicdav.ui.screen
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.AssistChip
@@ -23,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -38,7 +41,6 @@ import tech.xvanturing.musicdav.data.ServerConfigRepository
 import tech.xvanturing.musicdav.data.resolveAlbumUrl
 import tech.xvanturing.musicdav.player.PlaylistStateController
 import tech.xvanturing.musicdav.player.CacheManager
-import tech.xvanturing.musicdav.ui.BottomPlayerBar
 import tech.xvanturing.musicdav.ui.MusicListScreen
 import tech.xvanturing.musicdav.ui.components.AppTopBar
 import kotlinx.coroutines.launch
@@ -58,7 +60,7 @@ fun AlbumDetailScreen(
     playlistController: PlaylistStateController,
     modifier: Modifier = Modifier,
     onEdit: (Album) -> Unit = {},
-    onOpenNowPlaying: () -> Unit = {},
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -225,9 +227,19 @@ fun AlbumDetailScreen(
 
     Scaffold(
         topBar = {
+            Box(
+                modifier = Modifier.pointerInput(Unit) {
+                    var dragY = 0f
+                    detectVerticalDragGestures(
+                        onDragEnd = { if (dragY > 120f) onBack(); dragY = 0f },
+                        onVerticalDrag = { change, amount -> dragY += amount; change.consume() }
+                    )
+                }
+            ) {
             AppTopBar(
                 title = album.name,
                 onBack = onBack,
+                navigationIcon = Icons.Default.KeyboardArrowDown,
                 actions = {
                     IconButton(onClick = { forceRefresh() }) {
                         Icon(
@@ -287,6 +299,7 @@ fun AlbumDetailScreen(
                     }
                 }
             )
+            }
         }
     ) { paddingValues ->
         Box(modifier = modifier.padding(paddingValues)) {
@@ -324,6 +337,7 @@ fun AlbumDetailScreen(
                                 effectiveCoverImageUrl
                             )
                             playlistController.setCurrentWebDavConfig(webDavConfig)
+                            playlistController.setCurrentAlbumId(album.id)
                             playlistController.loadCachedCovers(context, currentAlbumSongs)
                             playlistController.setPlaylistAndPlay(index)
                         }
@@ -367,28 +381,7 @@ fun AlbumDetailScreen(
                             }
                         )
                     },
-                    bottomBar = {
-                        BottomPlayerBar(
-                            playlistState = playlistController.state,
-                            onPlayPause = {
-                                if (playlistController.state.isPlaying) {
-                                    playlistController.pause()
-                                } else {
-                                    playlistController.play()
-                                }
-                            },
-                            onNext = {
-                                playlistController.seekToNext()
-                            },
-                            onPrevious = {
-                                playlistController.seekToPrevious()
-                            },
-                            onTogglePlayMode = {
-                                playlistController.togglePlayMode()
-                            },
-                            onOpenNowPlaying = onOpenNowPlaying
-                        )
-                    },
+                    bottomInset = bottomInset,
                     cacheManager = cacheManager,
                     playlistController = playlistController
                 )

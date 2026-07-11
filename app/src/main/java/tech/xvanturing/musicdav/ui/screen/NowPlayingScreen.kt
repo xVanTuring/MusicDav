@@ -4,9 +4,7 @@ import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -39,8 +37,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -85,10 +81,10 @@ import kotlinx.coroutines.launch
 import okhttp3.Credentials
 import tech.xvanturing.musicdav.R
 import tech.xvanturing.musicdav.data.FavoritesRepository
-import tech.xvanturing.musicdav.data.PlayMode
 import tech.xvanturing.musicdav.data.WebDavConfig
 import tech.xvanturing.musicdav.data.cacheKey
 import tech.xvanturing.musicdav.player.PlaylistStateController
+import tech.xvanturing.musicdav.ui.components.RepeatModeButton
 import tech.xvanturing.musicdav.ui.theme.MotionSpec
 
 // Near-black vinyl body - a literal colour is fine here (grooves/disc body only,
@@ -114,21 +110,6 @@ fun NowPlayingScreen(
     }
     val favoriteScale = remember { Animatable(1f) }
     val coroutineScope = rememberCoroutineScope()
-
-    // 播放时持续旋转，暂停时定格在当前角度，恢复播放时从原角度继续转
-    val rotation = remember { Animatable(0f) }
-    LaunchedEffect(state.isPlaying) {
-        if (state.isPlaying) {
-            rotation.animateTo(
-                targetValue = rotation.value + 360f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 9000, easing = LinearEasing)
-                )
-            )
-        } else {
-            rotation.stop()
-        }
-    }
 
     var isDragging by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableStateOf(0f) }
@@ -233,7 +214,7 @@ fun NowPlayingScreen(
                     VinylDisc(
                         coverUrl = state.currentCoverUrl,
                         webDavConfig = state.effectiveWebDavConfig,
-                        rotationProvider = { rotation.value },
+                        rotationProvider = { tech.xvanturing.musicdav.ui.components.VinylRotationClock.angle },
                         modifier = Modifier
                             .fillMaxSize(0.88f)
                             .aspectRatio(1f)
@@ -417,34 +398,6 @@ private fun NowPlayingBackground(coverUrl: String?, webDavConfig: WebDavConfig?)
     }
 }
 
-// Three-state repeat-mode button. PLAY_ONCE reads as clearly "off" (no fill,
-// muted tint); REPEAT_ALL / REPEAT_SINGLE both get a filled primary pill so
-// "on" is unmistakable, and the icon itself (Repeat vs RepeatOne) tells them
-// apart.
-@Composable
-private fun RepeatModeButton(playMode: PlayMode, onClick: () -> Unit) {
-    val isOn = playMode != PlayMode.PLAY_ONCE
-    val icon = if (playMode == PlayMode.REPEAT_SINGLE) Icons.Default.RepeatOne else Icons.Default.Repeat
-    val tint = if (isOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    val pillColor = if (isOn) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
-    val description = when (playMode) {
-        PlayMode.REPEAT_SINGLE -> stringResource(R.string.player_mode_repeat_single)
-        PlayMode.REPEAT_ALL -> stringResource(R.string.player_mode_repeat_all)
-        PlayMode.PLAY_ONCE -> stringResource(R.string.player_mode_play_once)
-    }
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(pillColor),
-        contentAlignment = Alignment.Center
-    ) {
-        IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
-            Icon(imageVector = icon, contentDescription = description, tint = tint)
-        }
-    }
-}
-
 // Big gold play/pause button; the icon itself crossfades + scales in/out on
 // state change (mirrors the mini player's transition).
 @Composable
@@ -492,8 +445,9 @@ private fun PlayPauseButton(isPlaying: Boolean, onClick: () -> Unit) {
 // around the label edge, and the centre spindle hole on top. Rotation is
 // read via a lambda inside the graphicsLayer block (not the composable
 // body) so the continuous spin while playing never forces this whole
-// screen to recompose every frame - same intent as AlbumListScreen's
-// VinylRecord, which reads its rotation State<Float> in the same spot.
+// screen to recompose every frame - the caller passes a lambda that reads
+// the shared VinylRotationClock.angle (see AlbumListScreen's VinylRecord,
+// which reads the same global clock so both discs stay perfectly in sync).
 @Composable
 private fun VinylDisc(
     coverUrl: String?,

@@ -72,7 +72,8 @@ private const val MAX_CACHE_BYTES = 20L * 1024 * 1024 * 1024
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CacheManagementScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -222,7 +223,12 @@ fun CacheManagementScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 16.dp,
+                top = 16.dp,
+                end = 16.dp,
+                bottom = 16.dp + bottomInset
+            ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {

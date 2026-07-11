@@ -24,8 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
@@ -49,8 +47,8 @@ import coil3.network.httpHeaders
 import coil3.request.crossfade
 import okhttp3.Credentials
 import tech.xvanturing.musicdav.R
-import tech.xvanturing.musicdav.data.PlayMode
 import tech.xvanturing.musicdav.data.PlaylistState
+import tech.xvanturing.musicdav.ui.components.RepeatModeButton
 import tech.xvanturing.musicdav.ui.theme.MotionSpec
 
 private val CoverSize = 48.dp
@@ -195,28 +193,12 @@ fun BottomPlayerBar(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Play mode toggle - kept subtle here.
-                    IconButton(
+                    RepeatModeButton(
+                        playMode = playlistState.playMode,
                         onClick = onTogglePlayMode,
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = when (playlistState.playMode) {
-                                PlayMode.REPEAT_SINGLE -> Icons.Default.RepeatOne
-                                PlayMode.REPEAT_ALL -> Icons.Default.Repeat
-                                PlayMode.PLAY_ONCE -> Icons.Default.Repeat
-                            },
-                            contentDescription = when (playlistState.playMode) {
-                                PlayMode.REPEAT_SINGLE -> stringResource(R.string.player_mode_repeat_single)
-                                PlayMode.REPEAT_ALL -> stringResource(R.string.player_mode_repeat_all)
-                                PlayMode.PLAY_ONCE -> stringResource(R.string.player_mode_play_once)
-                            },
-                            tint = when (playlistState.playMode) {
-                                PlayMode.REPEAT_SINGLE, PlayMode.REPEAT_ALL -> MaterialTheme.colorScheme.primary
-                                PlayMode.PLAY_ONCE -> MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                        buttonSize = 32.dp,
+                        iconSize = 18.dp
+                    )
 
                     IconButton(
                         onClick = onPrevious,

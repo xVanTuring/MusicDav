@@ -51,7 +51,6 @@ import tech.xvanturing.musicdav.data.WebDavConfig
 import tech.xvanturing.musicdav.data.resolveAlbumUrl
 import tech.xvanturing.musicdav.player.CacheManager
 import tech.xvanturing.musicdav.player.PlaylistStateController
-import tech.xvanturing.musicdav.ui.BottomPlayerBar
 import tech.xvanturing.musicdav.ui.MusicListScreen
 import tech.xvanturing.musicdav.webdav.WebDavClient
 
@@ -61,7 +60,7 @@ fun SearchScreen(
     onBack: () -> Unit,
     playlistController: PlaylistStateController,
     modifier: Modifier = Modifier,
-    onOpenNowPlaying: () -> Unit = {}
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -244,6 +243,7 @@ fun SearchScreen(
                             playlistController.loadPlaylist(filtered)
                             playlistController.setSongConfigs(songConfigMap)
                             playlistController.setCurrentWebDavConfig(songConfigMap[filtered[index].url])
+                            playlistController.setCurrentAlbumId(null)
                             playlistController.loadCachedCovers(context, filtered)
                             playlistController.setPlaylistAndPlay(index)
                         }
@@ -282,22 +282,7 @@ fun SearchScreen(
                             }
                         )
                     },
-                    bottomBar = {
-                        BottomPlayerBar(
-                            playlistState = playlistController.state,
-                            onPlayPause = {
-                                if (playlistController.state.isPlaying) {
-                                    playlistController.pause()
-                                } else {
-                                    playlistController.play()
-                                }
-                            },
-                            onNext = { playlistController.seekToNext() },
-                            onPrevious = { playlistController.seekToPrevious() },
-                            onTogglePlayMode = { playlistController.togglePlayMode() },
-                            onOpenNowPlaying = onOpenNowPlaying
-                        )
-                    },
+                    bottomInset = bottomInset,
                     cacheManager = cacheManager,
                     playlistController = playlistController
                 )

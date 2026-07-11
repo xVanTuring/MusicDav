@@ -71,7 +71,8 @@ fun ServerConfigListScreen(
     onEdit: (ServerConfig) -> Unit = {},
     refreshKey: Int = 0,
     onImportSuccess: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -142,7 +143,12 @@ fun ServerConfigListScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        top = 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp + bottomInset
+                    ),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(configs, key = { it.id }) { config ->

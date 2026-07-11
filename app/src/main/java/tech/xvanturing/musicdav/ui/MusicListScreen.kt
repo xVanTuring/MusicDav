@@ -36,7 +36,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -68,8 +67,8 @@ fun MusicListScreen(
     errorMessage: String?,
     currentPlayingSong: MusicFile? = null,
     onSongSelected: (Int, MusicFile) -> Unit,
-    bottomBar: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
     enableCache: Boolean = false,
     onCacheRequest: (MusicFile) -> Unit = {},
     enableFavorite: Boolean = false,
@@ -80,27 +79,24 @@ fun MusicListScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    Scaffold(
-        bottomBar = bottomBar,
+    Content(
+        paddingValues = androidx.compose.foundation.layout.PaddingValues(0.dp),
+        isLoading = isLoading,
+        errorMessage = errorMessage,
+        musicFiles = musicFiles,
+        currentPlayingSong = currentPlayingSong,
+        onSongSelected = onSongSelected,
+        enableCache = enableCache,
+        onCacheRequest = onCacheRequest,
+        enableFavorite = enableFavorite,
+        isFavorite = isFavorite,
+        onToggleFavorite = onToggleFavorite,
+        context = context,
+        cacheManager = cacheManager,
+        playlistController = playlistController,
+        bottomInset = bottomInset,
         modifier = modifier
-    ) { paddingValues ->
-        Content(
-            paddingValues = paddingValues,
-            isLoading = isLoading,
-            errorMessage = errorMessage,
-            musicFiles = musicFiles,
-            currentPlayingSong = currentPlayingSong,
-            onSongSelected = onSongSelected,
-            enableCache = enableCache,
-            onCacheRequest = onCacheRequest,
-            enableFavorite = enableFavorite,
-            isFavorite = isFavorite,
-            onToggleFavorite = onToggleFavorite,
-            context = context,
-            cacheManager = cacheManager,
-            playlistController = playlistController
-        )
-    }
+    )
 }
 
 @Composable
@@ -118,10 +114,12 @@ private fun Content(
     onToggleFavorite: (MusicFile) -> Unit = {},
     context: android.content.Context,
     cacheManager: tech.xvanturing.musicdav.player.CacheManager? = null,
-    playlistController: tech.xvanturing.musicdav.player.PlaylistStateController? = null
+    playlistController: tech.xvanturing.musicdav.player.PlaylistStateController? = null,
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
+    modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(paddingValues)
     ) {
@@ -137,7 +135,8 @@ private fun Content(
 
             !musicFiles.isEmpty() -> {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = bottomInset)
                 ) {
                     itemsIndexed(musicFiles) { index, musicFile ->
                         MusicListItem(
