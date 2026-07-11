@@ -4,6 +4,16 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -16,6 +26,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
@@ -28,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import tech.xvanturing.musicdav.player.rememberNotificationPermissionState
 import tech.xvanturing.musicdav.player.rememberPlaylistStateController
 import tech.xvanturing.musicdav.ui.BottomPlayerBar
@@ -40,7 +52,57 @@ import tech.xvanturing.musicdav.ui.screen.NowPlayingScreen
 import tech.xvanturing.musicdav.ui.screen.SearchScreen
 import tech.xvanturing.musicdav.ui.screen.ServerConfigCreateScreen
 import tech.xvanturing.musicdav.ui.screen.ServerConfigListScreen
+import tech.xvanturing.musicdav.ui.theme.MotionSpec
 import tech.xvanturing.musicdav.ui.theme.MusicDavTheme
+import tech.xvanturing.musicdav.ui.theme.VinylEasingDecelerate
+import tech.xvanturing.musicdav.ui.theme.VinylEasingStandard
+import tech.xvanturing.musicdav.ui.theme.fadeThrough
+import tech.xvanturing.musicdav.ui.theme.forwardPush
+import tech.xvanturing.musicdav.ui.theme.slideDownExit
+import tech.xvanturing.musicdav.ui.theme.slideUpEnter
+
+/**
+ * Top-level screens that the root router in [MusicPlayerApp] can be showing.
+ * Carries whatever payload the destination needs so the outgoing screen in
+ * an [AnimatedContent] exit animation never has to re-read top-level mutable
+ * state (which may already have changed/gone null by the time the exit
+ * animation is still composing the old screen).
+ */
+private sealed interface AppScreen {
+    data object Tabs : AppScreen
+    data class Detail(val album: tech.xvanturing.musicdav.data.Album) : AppScreen
+    data class Edit(val album: tech.xvanturing.musicdav.data.Album?) : AppScreen
+    data object Favorites : AppScreen
+    data object Search : AppScreen
+}
+
+/** Navigation depth used to pick a transition direction in [MusicPlayerApp]. */
+private fun AppScreen.depth(): Int = when (this) {
+    AppScreen.Tabs -> 0
+    is AppScreen.Favorites -> 1
+    is AppScreen.Search -> 1
+    is AppScreen.Detail -> 1
+    is AppScreen.Edit -> 2
+}
+
+/**
+ * Mirror of [forwardPush] but sliding the opposite direction (new screen
+ * enters from the left, old screen exits to the right) — used when
+ * navigating back up the hierarchy so the animation reads as "going back".
+ */
+private fun reversePush(): ContentTransform {
+    val enter = slideInHorizontally(
+        animationSpec = tween(MotionSpec.medium, easing = VinylEasingDecelerate)
+    ) { fullWidth -> -fullWidth } + fadeIn(
+        animationSpec = tween(MotionSpec.medium, easing = VinylEasingStandard)
+    )
+    val exit = slideOutHorizontally(
+        animationSpec = tween(MotionSpec.medium, easing = VinylEasingStandard)
+    ) { fullWidth -> fullWidth } + fadeOut(
+        animationSpec = tween(MotionSpec.fast, easing = VinylEasingStandard)
+    )
+    return enter togetherWith exit
+}
 
 
 class MainActivity : ComponentActivity() {
@@ -90,92 +152,132 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
             lastBackPressTime = currentTime
             android.widget.Toast.makeText(
                 context,
-                "再按一次退出应用",
+                context.getString(R.string.toast_press_again_exit),
                 android.widget.Toast.LENGTH_SHORT
             ).show()
         }
     }
 
-    Box(modifier = modifier) {
-        if (editingAlbum != null) {
-            // Show edit form
-            AlbumCreateForm(
-                onCancel = { editingAlbum = null },
-                onSave = { name, url, username, password, directoryUrl, coverImageUrl, serverConfigId ->
-                    val config = tech.xvanturing.musicdav.data.WebDavConfig(
-                        url = url,
-                        username = username,
-                        password = password
+    val screen: AppScreen = when {
+        editingAlbum != null -> AppScreen.Edit(editingAlbum)
+        showFavorites -> AppScreen.Favorites
+        showSearch -> AppScreen.Search
+        selectedAlbum == null -> AppScreen.Tabs
+        else -> AppScreen.Detail(selectedAlbum!!)
+    }
+
+    Box(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
+        AnimatedContent(
+            targetState = screen,
+            transitionSpec = {
+                val targetDepth = targetState.depth()
+                val initialDepth = initialState.depth()
+                when {
+                    targetDepth > initialDepth -> forwardPush()
+                    targetDepth < initialDepth -> reversePush()
+                    else -> fadeThrough()
+                }
+            },
+            label = "rootNav"
+        ) { target ->
+            when (target) {
+                is AppScreen.Edit -> {
+                    // Show edit form
+                    AlbumCreateForm(
+                        onCancel = { editingAlbum = null },
+                        onSave = { name, url, username, password, directoryUrl, coverImageUrl, serverConfigId ->
+                            val config = tech.xvanturing.musicdav.data.WebDavConfig(
+                                url = url,
+                                username = username,
+                                password = password
+                            )
+                            val updatedAlbum = target.album!!.copy(
+                                name = name,
+                                config = config,
+                                directoryUrl = directoryUrl,
+                                coverImageUrl = coverImageUrl,
+                                serverConfigId = serverConfigId
+                            )
+                            // Update the album in the list
+                            val updatedAlbums =
+                                albums.map { if (it == target.album) updatedAlbum else it }
+                            albums = updatedAlbums
+                            tech.xvanturing.musicdav.data.AlbumsRepository.save(
+                                context,
+                                updatedAlbums
+                            )
+                            // Update selected album if it's the same one
+                            if (selectedAlbum == target.album) {
+                                selectedAlbum = updatedAlbum
+                            }
+                            editingAlbum = null
+                        },
+                        editingAlbum = target.album
                     )
-                    val updatedAlbum = editingAlbum!!.copy(
-                        name = name,
-                        config = config,
-                        directoryUrl = directoryUrl,
-                        coverImageUrl = coverImageUrl,
-                        serverConfigId = serverConfigId
+                }
+
+                AppScreen.Favorites -> {
+                    FavoritesScreen(
+                        onBack = { showFavorites = false },
+                        onOpenNowPlaying = { showNowPlaying = true },
+                        playlistController = playlistController,
+                        modifier = Modifier.fillMaxSize()
                     )
-                    // Update the album in the list
-                    val updatedAlbums = albums.map { if (it == editingAlbum) updatedAlbum else it }
-                    albums = updatedAlbums
-                    tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updatedAlbums)
-                    // Update selected album if it's the same one
-                    if (selectedAlbum == editingAlbum) {
-                        selectedAlbum = updatedAlbum
-                    }
-                    editingAlbum = null
-                },
-                editingAlbum = editingAlbum
-            )
-        } else if (showFavorites) {
-            FavoritesScreen(
-                onBack = { showFavorites = false },
-                onOpenNowPlaying = { showNowPlaying = true },
-                playlistController = playlistController,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else if (showSearch) {
-            SearchScreen(
-                onBack = { showSearch = false },
-                onOpenNowPlaying = { showNowPlaying = true },
-                playlistController = playlistController,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else if (selectedAlbum == null) {
-            MainTabScreen(
-                albums = albums,
-                onRefreshAlbums = {
-                    albums = tech.xvanturing.musicdav.data.AlbumsRepository.load(context)
-                },
-                onSelectAlbum = { selectedAlbum = it },
-                onCreateAlbum = { album, serverConfigId ->
-                    val updated = albums + album
-                    albums = updated
-                    tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updated)
-                    // 不自动导航到专辑详情，保持在列表页面
-                },
-                onDeleteAlbum = { album ->
-                    val updated = albums.filterNot { it.id == album.id }
-                    albums = updated
-                    tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updated)
-                },
-                onOpenFavorites = { showFavorites = true },
-                onOpenSearch = { showSearch = true },
-                onOpenNowPlaying = { showNowPlaying = true },
-                playlistController = playlistController,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            AlbumDetailScreen(
-                album = selectedAlbum!!,
-                onBack = { selectedAlbum = null },
-                onOpenNowPlaying = { showNowPlaying = true },
-                onEdit = { album -> editingAlbum = album },
-                playlistController = playlistController,
-                modifier = Modifier.fillMaxSize()
-            )
+                }
+
+                AppScreen.Search -> {
+                    SearchScreen(
+                        onBack = { showSearch = false },
+                        onOpenNowPlaying = { showNowPlaying = true },
+                        playlistController = playlistController,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                AppScreen.Tabs -> {
+                    MainTabScreen(
+                        albums = albums,
+                        onRefreshAlbums = {
+                            albums = tech.xvanturing.musicdav.data.AlbumsRepository.load(context)
+                        },
+                        onSelectAlbum = { selectedAlbum = it },
+                        onCreateAlbum = { album, serverConfigId ->
+                            val updated = albums + album
+                            albums = updated
+                            tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updated)
+                            // 不自动导航到专辑详情，保持在列表页面
+                        },
+                        onDeleteAlbum = { album ->
+                            val updated = albums.filterNot { it.id == album.id }
+                            albums = updated
+                            tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updated)
+                        },
+                        onOpenFavorites = { showFavorites = true },
+                        onOpenSearch = { showSearch = true },
+                        onOpenNowPlaying = { showNowPlaying = true },
+                        playlistController = playlistController,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                is AppScreen.Detail -> {
+                    AlbumDetailScreen(
+                        album = target.album,
+                        onBack = { selectedAlbum = null },
+                        onOpenNowPlaying = { showNowPlaying = true },
+                        onEdit = { album -> editingAlbum = album },
+                        playlistController = playlistController,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
         }
 
-        if (showNowPlaying) {
+        AnimatedVisibility(
+            visible = showNowPlaying,
+            enter = slideUpEnter(),
+            exit = slideDownExit()
+        ) {
             NowPlayingScreen(
                 playlistController = playlistController,
                 onBack = { showNowPlaying = false },
@@ -183,6 +285,27 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
             )
         }
     }
+}
+
+/**
+ * Screens that [MainTabScreen] itself can be showing, layered above the tab
+ * scaffold. Carries whatever payload the destination needs so the outgoing
+ * screen in an [AnimatedContent] exit animation never has to re-read this
+ * composable's mutable state (which may already have changed/gone null by
+ * the time the exit animation is still composing the old screen).
+ */
+private sealed interface TabRoute {
+    data object Main : TabRoute
+    data object CreateAlbum : TabRoute
+    data class EditServerConfig(val editing: tech.xvanturing.musicdav.data.ServerConfig?) :
+        TabRoute
+}
+
+/** Navigation depth used to pick a transition direction in [MainTabScreen]. */
+private fun TabRoute.depth(): Int = when (this) {
+    TabRoute.Main -> 0
+    TabRoute.CreateAlbum -> 1
+    is TabRoute.EditServerConfig -> 1
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -221,157 +344,187 @@ fun MainTabScreen(
     }
 
     // 如果正在创建专辑或服务器配置，显示相应的创建屏幕
-    if (creatingAlbum) {
-        AlbumCreateForm(
-            onCancel = { creatingAlbum = false },
-            onSave = { name, url, username, password, directoryUrl, coverImageUrl, serverConfigId ->
-                val config = tech.xvanturing.musicdav.data.WebDavConfig(
-                    url = url,
-                    username = username,
-                    password = password
-                )
-                val album = tech.xvanturing.musicdav.data.Album(
-                    id = java.util.UUID.randomUUID().toString(),
-                    name = name,
-                    config = config,
-                    directoryUrl = directoryUrl,
-                    coverImageUrl = coverImageUrl,
-                    serverConfigId = serverConfigId
-                )
-                onCreateAlbum(album, serverConfigId)
-                creatingAlbum = false
-            },
-            onCreateServerConfig = {
-                creatingAlbum = false
-                creatingServerConfig = true
-            }
-        )
-        return
+    val tabRoute: TabRoute = when {
+        creatingAlbum -> TabRoute.CreateAlbum
+        creatingServerConfig || editingServerConfig != null ->
+            TabRoute.EditServerConfig(editingServerConfig)
+
+        else -> TabRoute.Main
     }
 
-    if (creatingServerConfig || editingServerConfig != null) {
-        ServerConfigCreateScreen(
-            editingConfig = editingServerConfig,
-            onCancel = {
-                creatingServerConfig = false
-                editingServerConfig = null
-            },
-            onSave = { config ->
-                // 服务器配置已保存
-                creatingServerConfig = false
-                editingServerConfig = null
-                serverConfigsRefreshKey++
-            }
-        )
-        return
-    }
-
-    // 主标签页布局
-    androidx.compose.material3.Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            Column {
-                // 播放控件在标签栏上方
-                BottomPlayerBar(
-                    playlistState = playlistController.state,
-                    onPlayPause = {
-                        if (playlistController.state.isPlaying) {
-                            playlistController.pause()
-                        } else {
-                            playlistController.play()
-                        }
-                    },
-                    onNext = {
-                        playlistController.seekToNext()
-                    },
-                    onPrevious = {
-                        playlistController.seekToPrevious()
-                    },
-                    onTogglePlayMode = {
-                        playlistController.togglePlayMode()
-                    },
-                    onOpenNowPlaying = onOpenNowPlaying,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // 底部导航栏
-                NavigationBar(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    NavigationBarItem(
-                        selected = selectedTabIndex == 0,
-                        onClick = { selectedTabIndex = 0 },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.Album,
-                                contentDescription = "Albums"
-                            )
-                        },
-                        label = { Text("Albums") }
-                    )
-                    NavigationBarItem(
-                        selected = selectedTabIndex == 1,
-                        onClick = { selectedTabIndex = 1 },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Server Configs"
-                            )
-                        },
-                        label = { Text("Servers") }
-                    )
-                    NavigationBarItem(
-                        selected = selectedTabIndex == 2,
-                        onClick = { selectedTabIndex = 2 },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.Storage,
-                                contentDescription = "Cache"
-                            )
-                        },
-                        label = { Text("Cache") }
-                    )
-                }
+    AnimatedContent(
+        targetState = tabRoute,
+        transitionSpec = {
+            val targetDepth = targetState.depth()
+            val initialDepth = initialState.depth()
+            when {
+                targetDepth > initialDepth -> forwardPush()
+                targetDepth < initialDepth -> reversePush()
+                else -> fadeThrough()
             }
         },
+        label = "tabRoute",
         modifier = modifier
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            when (selectedTabIndex) {
-                0 -> {
-                    AlbumListScreen(
-                        albums = albums,
-                        onSelect = onSelectAlbum,
-                        onCreate = { album, serverConfigId ->
-                            onCreateAlbum(album, serverConfigId)
-                        },
-                        onDelete = onDeleteAlbum,
-                        onAddButtonClick = { creatingAlbum = true },
-                        onImportSuccess = { onRefreshAlbums() },
-                        onOpenFavorites = onOpenFavorites,
-                        onOpenSearch = onOpenSearch,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+    ) { route ->
+        when (route) {
+            TabRoute.CreateAlbum -> {
+                AlbumCreateForm(
+                    onCancel = { creatingAlbum = false },
+                    onSave = { name, url, username, password, directoryUrl, coverImageUrl, serverConfigId ->
+                        val config = tech.xvanturing.musicdav.data.WebDavConfig(
+                            url = url,
+                            username = username,
+                            password = password
+                        )
+                        val album = tech.xvanturing.musicdav.data.Album(
+                            id = java.util.UUID.randomUUID().toString(),
+                            name = name,
+                            config = config,
+                            directoryUrl = directoryUrl,
+                            coverImageUrl = coverImageUrl,
+                            serverConfigId = serverConfigId
+                        )
+                        onCreateAlbum(album, serverConfigId)
+                        creatingAlbum = false
+                    },
+                    onCreateServerConfig = {
+                        creatingAlbum = false
+                        creatingServerConfig = true
+                    }
+                )
+            }
 
-                1 -> {
-                    ServerConfigListScreen(
-                        onCreate = { creatingServerConfig = true },
-                        onEdit = { config -> editingServerConfig = config },
-                        refreshKey = serverConfigsRefreshKey,
-                        onImportSuccess = { onRefreshAlbums() },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+            is TabRoute.EditServerConfig -> {
+                ServerConfigCreateScreen(
+                    editingConfig = route.editing,
+                    onCancel = {
+                        creatingServerConfig = false
+                        editingServerConfig = null
+                    },
+                    onSave = { config ->
+                        // 服务器配置已保存
+                        creatingServerConfig = false
+                        editingServerConfig = null
+                        serverConfigsRefreshKey++
+                    }
+                )
+            }
 
-                2 -> {
-                    CacheManagementScreen(
-                        modifier = Modifier.fillMaxSize()
-                    )
+            TabRoute.Main -> {
+                // 主标签页布局
+                androidx.compose.material3.Scaffold(
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                    bottomBar = {
+                        Column {
+                            // 播放控件在标签栏上方
+                            BottomPlayerBar(
+                                playlistState = playlistController.state,
+                                onPlayPause = {
+                                    if (playlistController.state.isPlaying) {
+                                        playlistController.pause()
+                                    } else {
+                                        playlistController.play()
+                                    }
+                                },
+                                onNext = {
+                                    playlistController.seekToNext()
+                                },
+                                onPrevious = {
+                                    playlistController.seekToPrevious()
+                                },
+                                onTogglePlayMode = {
+                                    playlistController.togglePlayMode()
+                                },
+                                onOpenNowPlaying = onOpenNowPlaying,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // 底部导航栏
+                            NavigationBar(
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                NavigationBarItem(
+                                    selected = selectedTabIndex == 0,
+                                    onClick = { selectedTabIndex = 0 },
+                                    icon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Album,
+                                            contentDescription = stringResource(R.string.nav_albums)
+                                        )
+                                    },
+                                    label = { Text(stringResource(R.string.nav_albums)) }
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTabIndex == 1,
+                                    onClick = { selectedTabIndex = 1 },
+                                    icon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Settings,
+                                            contentDescription = stringResource(R.string.nav_servers)
+                                        )
+                                    },
+                                    label = { Text(stringResource(R.string.nav_servers)) }
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTabIndex == 2,
+                                    onClick = { selectedTabIndex = 2 },
+                                    icon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Storage,
+                                            contentDescription = stringResource(R.string.nav_cache)
+                                        )
+                                    },
+                                    label = { Text(stringResource(R.string.nav_cache)) }
+                                )
+                            }
+                        }
+                    }
+                ) { paddingValues ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(paddingValues)
+                    ) {
+                        AnimatedContent(
+                            targetState = selectedTabIndex,
+                            transitionSpec = { fadeThrough() },
+                            label = "tabNav"
+                        ) { tab ->
+                            when (tab) {
+                                0 -> {
+                                    AlbumListScreen(
+                                        albums = albums,
+                                        onSelect = onSelectAlbum,
+                                        onCreate = { album, serverConfigId ->
+                                            onCreateAlbum(album, serverConfigId)
+                                        },
+                                        onDelete = onDeleteAlbum,
+                                        onAddButtonClick = { creatingAlbum = true },
+                                        onImportSuccess = { onRefreshAlbums() },
+                                        onOpenFavorites = onOpenFavorites,
+                                        onOpenSearch = onOpenSearch,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+
+                                1 -> {
+                                    ServerConfigListScreen(
+                                        onCreate = { creatingServerConfig = true },
+                                        onEdit = { config -> editingServerConfig = config },
+                                        refreshKey = serverConfigsRefreshKey,
+                                        onImportSuccess = { onRefreshAlbums() },
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+
+                                2 -> {
+                                    CacheManagementScreen(
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

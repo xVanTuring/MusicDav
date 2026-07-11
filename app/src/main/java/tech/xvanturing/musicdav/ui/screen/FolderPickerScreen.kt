@@ -1,19 +1,22 @@
 package tech.xvanturing.musicdav.ui.screen
 
 import android.util.Log
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
@@ -27,7 +30,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,12 +37,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import tech.xvanturing.musicdav.data.WebDavConfig
-import tech.xvanturing.musicdav.webdav.WebDavClient
 import kotlinx.coroutines.launch
+import tech.xvanturing.musicdav.R
+import tech.xvanturing.musicdav.data.WebDavConfig
+import tech.xvanturing.musicdav.ui.components.AppTopBar
+import tech.xvanturing.musicdav.webdav.WebDavClient
 import java.net.URL
 
 enum class FilePickerMode {
@@ -168,34 +175,9 @@ fun FolderPickerScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(config.title)
-                        config.subtitle?.let { subtitle ->
-                            Text(
-                                text = subtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        currentBrowsingPath?.let { path ->
-                            Text(
-                                text = path.trimEnd('/').substringAfterLast('/'),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onCancel) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                },
+            AppTopBar(
+                title = config.title,
+                onBack = onCancel,
                 actions = {
                     IconButton(
                         onClick = { handleConfirm() },
@@ -207,7 +189,7 @@ fun FolderPickerScreen(
                     ) {
                         Icon(
                             Icons.Default.Check,
-                            contentDescription = "确认"
+                            contentDescription = stringResource(R.string.picker_select)
                         )
                     }
                 }
@@ -215,142 +197,187 @@ fun FolderPickerScreen(
         },
         modifier = modifier
     ) { paddingValues ->
-        if (isLoading) {
-            Column(
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            // Slim path strip beneath the app bar - replaces the old 3-line
+            // title/subtitle/path stack that used to live inside the TopAppBar.
+            Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                CircularProgressIndicator()
-                Text(
-                    text = "加载中...",
-                    modifier = Modifier.padding(top = 8.dp)
+                Icon(
+                    imageVector = Icons.Default.Folder,
+                    contentDescription = stringResource(R.string.picker_current_path),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
                 )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    config.subtitle?.let { subtitle ->
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    currentBrowsingPath?.let { path ->
+                        val displayName = path.trimEnd('/').substringAfterLast('/').ifBlank { "/" }
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                if (canGoUp) {
-                    item {
+
+            if (isLoading) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        text = stringResource(R.string.common_loading),
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f)
+                ) {
+                    if (canGoUp) {
+                        item {
+                            ListItem(
+                                headlineContent = { Text(stringResource(R.string.picker_go_up)) },
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Default.FolderOpen,
+                                        contentDescription = stringResource(R.string.picker_go_up),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { handleGoUp() }
+                            )
+                        }
+                    }
+
+                    val filteredDirectories = directories.filter { dir ->
+                        val dirPath = dir.path.trimEnd('/')
+                        val currentPath = currentBrowsingPath?.trimEnd('/') ?: ""
+                        val currentPathOnly = if (currentPath.startsWith("http")) {
+                            try {
+                                val url = java.net.URL(currentPath)
+                                url.path.trimEnd('/')
+                            } catch (e: Exception) {
+                                currentPath.trimEnd('/')
+                            }
+                        } else {
+                            currentPath.trimEnd('/')
+                        }
+
+                        val isCurrentDirectory = dirPath == currentPathOnly
+                        !isCurrentDirectory && dir.name != "."
+                    }
+
+                    items(filteredDirectories) { dir ->
+                        val displayName = dir.name.ifBlank { dir.path }
                         ListItem(
-                            headlineContent = { Text("返回上级") },
+                            headlineContent = { Text(displayName) },
                             leadingContent = {
                                 Icon(
-                                    Icons.Default.FolderOpen,
-                                    contentDescription = "返回上级目录",
+                                    Icons.Default.Folder,
+                                    contentDescription = stringResource(R.string.picker_folder_desc),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            trailingContent = {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = stringResource(R.string.picker_enter_folder_desc),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { handleGoUp() }
+                                .clickable { handleEnterDirectory(dir) }
                         )
                     }
-                }
 
-                val filteredDirectories = directories.filter { dir ->
-                    val dirPath = dir.path.trimEnd('/')
-                    val currentPath = currentBrowsingPath?.trimEnd('/') ?: ""
-                    val currentPathOnly = if (currentPath.startsWith("http")) {
-                        try {
-                            val url = java.net.URL(currentPath)
-                            url.path.trimEnd('/')
-                        } catch (e: Exception) {
-                            currentPath.trimEnd('/')
-                        }
-                    } else {
-                        currentPath.trimEnd('/')
+                    val shouldShowFiles = when (config.mode) {
+                        FilePickerMode.FILE_ONLY, FilePickerMode.FILE_AND_DIRECTORY -> true
+                        FilePickerMode.DIRECTORY_ONLY -> config.showFilesInDirectoryMode
                     }
 
-                    val isCurrentDirectory = dirPath == currentPathOnly
-                    !isCurrentDirectory && dir.name != "."
-                }
+                    if (shouldShowFiles) {
+                        val files = allResources.filter { !it.isDirectory }
+                        val filteredFiles = if (config.allowedFileExtensions.isNotEmpty()) {
+                            files.filter { file ->
+                                val displayName = file.name.ifBlank { file.path }
+                                val fileExtension = displayName.substringAfterLast('.', "").lowercase()
+                                fileExtension in config.allowedFileExtensions
+                            }
+                        } else {
+                            files
+                        }
 
-                items(filteredDirectories) { dir ->
-                    val displayName = dir.name.ifBlank { dir.path }
-                    ListItem(
-                        headlineContent = { Text(displayName) },
-                        leadingContent = {
-                            Icon(
-                                Icons.Default.Folder,
-                                contentDescription = "子文件夹",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        },
-                        trailingContent = {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = "进入文件夹",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { handleEnterDirectory(dir) }
-                    )
-                }
-
-                val shouldShowFiles = when (config.mode) {
-                    FilePickerMode.FILE_ONLY, FilePickerMode.FILE_AND_DIRECTORY -> true
-                    FilePickerMode.DIRECTORY_ONLY -> config.showFilesInDirectoryMode
-                }
-
-                if (shouldShowFiles) {
-                    val files = allResources.filter { !it.isDirectory }
-                    val filteredFiles = if (config.allowedFileExtensions.isNotEmpty()) {
-                        files.filter { file ->
+                        items(filteredFiles) { file ->
                             val displayName = file.name.ifBlank { file.path }
                             val fileExtension = displayName.substringAfterLast('.', "").lowercase()
-                            fileExtension in config.allowedFileExtensions
-                        }
-                    } else {
-                        files
-                    }
-
-                    items(filteredFiles) { file ->
-                        val displayName = file.name.ifBlank { file.path }
-                        val fileExtension = displayName.substringAfterLast('.', "").lowercase()
-                        val isSelectable = when (config.mode) {
-                            FilePickerMode.FILE_ONLY, FilePickerMode.FILE_AND_DIRECTORY -> {
-                                config.allowedFileExtensions.isEmpty() || fileExtension in config.allowedFileExtensions
+                            val isSelectable = when (config.mode) {
+                                FilePickerMode.FILE_ONLY, FilePickerMode.FILE_AND_DIRECTORY -> {
+                                    config.allowedFileExtensions.isEmpty() || fileExtension in config.allowedFileExtensions
+                                }
+                                FilePickerMode.DIRECTORY_ONLY -> false
                             }
-                            FilePickerMode.DIRECTORY_ONLY -> false
-                        }
-                        val isSelected = selectedPath == file.path
+                            val isSelected = selectedPath == file.path
 
-                        ListItem(
-                            headlineContent = {
-                                Text(
-                                    text = displayName,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            leadingContent = {
-                                if (config.showFileIcons) {
-                                    Icon(
-                                        imageVector = getFileIcon(fileExtension),
-                                        contentDescription = "文件",
-                                        tint = if (isSelected) MaterialTheme.colorScheme.primary
+                            ListItem(
+                                headlineContent = {
+                                    Text(
+                                        text = displayName,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary
                                         else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .then(if (isSelectable) Modifier.clickable {
-                                    selectedPath = if (isSelected) null else file.path
-                                } else Modifier)
-                        )
+                                },
+                                leadingContent = {
+                                    if (config.showFileIcons) {
+                                        Icon(
+                                            imageVector = getFileIcon(fileExtension),
+                                            contentDescription = stringResource(R.string.picker_file_desc),
+                                            tint = if (isSelected) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(if (isSelectable) Modifier.clickable {
+                                        selectedPath = if (isSelected) null else file.path
+                                    } else Modifier)
+                            )
+                        }
                     }
                 }
             }
         }
     }
 }
-
 

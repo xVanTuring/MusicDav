@@ -1,18 +1,10 @@
 package tech.xvanturing.musicdav.ui.screen
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,8 +15,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import android.widget.Toast
 import kotlinx.coroutines.launch
+import tech.xvanturing.musicdav.R
 import tech.xvanturing.musicdav.data.FavoritesRepository
 import tech.xvanturing.musicdav.data.MusicFile
 import tech.xvanturing.musicdav.data.WebDavConfig
@@ -33,6 +27,7 @@ import tech.xvanturing.musicdav.player.CacheManager
 import tech.xvanturing.musicdav.player.PlaylistStateController
 import tech.xvanturing.musicdav.ui.BottomPlayerBar
 import tech.xvanturing.musicdav.ui.MusicListScreen
+import tech.xvanturing.musicdav.ui.components.AppTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,20 +65,9 @@ fun FavoritesScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "收藏夹",
-                        maxLines = 1,
-                        modifier = Modifier.fillMaxWidth().basicMarquee(),
-                        softWrap = false
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
+            AppTopBar(
+                title = stringResource(R.string.common_favorites),
+                onBack = onBack
             )
         }
     ) { paddingValues ->
@@ -118,10 +102,18 @@ fun FavoritesScreen(
                         musicFile = musicFile,
                         config = config,
                         onSuccess = {
-                            Toast.makeText(context, "Cached: ${musicFile.name}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.toast_cached_song, musicFile.name),
+                                Toast.LENGTH_SHORT
+                            ).show()
                         },
                         onFailure = { error ->
-                            Toast.makeText(context, "Failed to cache: ${error.message}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.toast_cache_song_failed, error.message ?: ""),
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     )
                 },

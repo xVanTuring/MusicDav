@@ -1,13 +1,10 @@
 package tech.xvanturing.musicdav.ui.screen
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Download
@@ -17,7 +14,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -28,11 +24,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import android.widget.Toast
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.mutableIntStateOf
+import tech.xvanturing.musicdav.R
 import tech.xvanturing.musicdav.data.Album
 import tech.xvanturing.musicdav.data.FavoritesRepository
 import tech.xvanturing.musicdav.data.ServerAddressResolver
@@ -42,7 +40,10 @@ import tech.xvanturing.musicdav.player.PlaylistStateController
 import tech.xvanturing.musicdav.player.CacheManager
 import tech.xvanturing.musicdav.ui.BottomPlayerBar
 import tech.xvanturing.musicdav.ui.MusicListScreen
+import tech.xvanturing.musicdav.ui.components.AppTopBar
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import tech.xvanturing.musicdav.data.MusicFile
 import tech.xvanturing.musicdav.data.PlaylistCache
 import tech.xvanturing.musicdav.data.MusicMetadataCache
@@ -74,8 +75,13 @@ fun AlbumDetailScreen(
     var forceRefreshKey by remember { mutableIntStateOf(0) }
 
     // 收藏状态
-    var favoriteKeys by remember {
-        mutableStateOf(FavoritesRepository.load(context).map { it.musicFile.cacheKey }.toSet())
+    var favoriteKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    // 收藏状态在后台线程加载，避免首次组合时阻塞主线程（进场滑动动画期间尤其明显）
+    LaunchedEffect(Unit) {
+        favoriteKeys = withContext(Dispatchers.IO) {
+            FavoritesRepository.load(context).map { it.musicFile.cacheKey }.toSet()
+        }
     }
 
     // 缓存状态
@@ -137,8 +143,8 @@ fun AlbumDetailScreen(
         if (!hasTriedInitialRefresh) {
             hasTriedInitialRefresh = true
             coroutineScope.launch {
-                // 先加载缓存数据（如果有）
-                val cachedFiles = PlaylistCache.load(context, album.id)
+                // 先加载缓存数据（如果有），放到 IO 线程读取，避免阻塞主线程（进场滑动动画期间尤其明显）
+                val cachedFiles = withContext(Dispatchers.IO) { PlaylistCache.load(context, album.id) }
                 if (cachedFiles.isNotEmpty()) {
                     currentAlbumSongs = cachedFiles
                     // 设置专辑封面映射
@@ -194,7 +200,7 @@ fun AlbumDetailScreen(
                             if (cachedFiles.isNotEmpty()) {
                                 Toast.makeText(
                                     context,
-                                    "无法获取最新数据，使用缓存列表",
+                                    context.getString(R.string.album_toast_fetch_failed_use_cache),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -206,7 +212,7 @@ fun AlbumDetailScreen(
                     if (cachedFiles.isNotEmpty()) {
                         Toast.makeText(
                             context,
-                            "无法获取最新数据，使用缓存列表",
+                            context.getString(R.string.album_toast_fetch_failed_use_cache),
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -219,30 +225,14 @@ fun AlbumDetailScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = album.name,
-                        maxLines = 1,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .basicMarquee(),
-                        softWrap = false
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                },
+            AppTopBar(
+                title = album.name,
+                onBack = onBack,
                 actions = {
                     IconButton(onClick = { forceRefresh() }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh"
+                            contentDescription = stringResource(R.string.action_refresh)
                         )
                     }
                     IconButton(
@@ -257,14 +247,17 @@ fun AlbumDetailScreen(
                                     onSuccess = { count ->
                                         Toast.makeText(
                                             context,
-                                            "正在缓存 $count 首歌曲...",
+                                            context.getString(R.string.album_toast_caching_album, count),
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     },
                                     onFailure = { error ->
                                         Toast.makeText(
                                             context,
-                                            "Failed to cache album: ${error.message}",
+                                            context.getString(
+                                                R.string.album_toast_cache_album_failed,
+                                                error.message ?: ""
+                                            ),
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     }
@@ -282,14 +275,14 @@ fun AlbumDetailScreen(
                         } else {
                             Icon(
                                 imageVector = Icons.Default.Download,
-                                contentDescription = "Cache Album"
+                                contentDescription = stringResource(R.string.album_cache_album_desc)
                             )
                         }
                     }
                     IconButton(onClick = { onEdit(album) }) {
                         Icon(
                             imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit Album"
+                            contentDescription = stringResource(R.string.album_edit_desc)
                         )
                     }
                 }
@@ -302,7 +295,11 @@ fun AlbumDetailScreen(
                     onClick = { },
                     label = {
                         Text(
-                            "提取元数据: ${metadataExtractionProgress?.first ?: 0}/${metadataExtractionProgress?.second ?: 0}"
+                            stringResource(
+                                R.string.album_extracting_metadata,
+                                metadataExtractionProgress?.first ?: 0,
+                                metadataExtractionProgress?.second ?: 0
+                            )
                         )
                     },
                     leadingIcon = {
@@ -334,12 +331,18 @@ fun AlbumDetailScreen(
                     enableFavorite = true,
                     isFavorite = { musicFile -> favoriteKeys.contains(musicFile.cacheKey) },
                     onToggleFavorite = { musicFile ->
-                        FavoritesRepository.toggle(
-                            context,
-                            musicFile,
-                            if (musicFile.serverConfigId == null) webDavConfig else null
-                        )
-                        favoriteKeys = FavoritesRepository.load(context).map { it.musicFile.cacheKey }.toSet()
+                        coroutineScope.launch {
+                            withContext(Dispatchers.IO) {
+                                FavoritesRepository.toggle(
+                                    context,
+                                    musicFile,
+                                    if (musicFile.serverConfigId == null) webDavConfig else null
+                                )
+                            }
+                            favoriteKeys = withContext(Dispatchers.IO) {
+                                FavoritesRepository.load(context).map { it.musicFile.cacheKey }.toSet()
+                            }
+                        }
                     },
                     enableCache = true,
                     onCacheRequest = { musicFile ->
@@ -351,14 +354,14 @@ fun AlbumDetailScreen(
                             onSuccess = { path ->
                                 Toast.makeText(
                                     context,
-                                    "Cached: ${musicFile.name}",
+                                    context.getString(R.string.toast_cached_song, musicFile.name),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             },
                             onFailure = { error ->
                                 Toast.makeText(
                                     context,
-                                    "Failed to cache: ${error.message}",
+                                    context.getString(R.string.toast_cache_song_failed, error.message ?: ""),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }

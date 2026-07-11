@@ -2,8 +2,12 @@ package tech.xvanturing.musicdav.ui.screen
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
@@ -12,10 +16,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,10 +33,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import kotlinx.coroutines.launch
+import tech.xvanturing.musicdav.R
 import tech.xvanturing.musicdav.data.Album
 import tech.xvanturing.musicdav.data.AlbumsRepository
 import tech.xvanturing.musicdav.data.FavoritesRepository
@@ -143,29 +152,58 @@ fun SearchScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    OutlinedTextField(
+                    TextField(
                         value = query,
                         onValueChange = { query = it },
                         modifier = Modifier
                             .fillMaxWidth()
+                            .heightIn(min = 48.dp)
                             .focusRequester(focusRequester),
-                        placeholder = { Text("搜索歌曲名 / 艺术家") },
+                        placeholder = { Text(stringResource(R.string.search_placeholder)) },
                         singleLine = true,
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        shape = MaterialTheme.shapes.large,
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
                         trailingIcon = {
                             if (query.isNotEmpty()) {
                                 IconButton(onClick = { query = "" }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "清除")
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = stringResource(R.string.action_clear)
+                                    )
                                 }
                             }
-                        }
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent
+                        )
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back)
+                        )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
         },
         modifier = modifier
@@ -173,11 +211,27 @@ fun SearchScreen(
         Box(modifier = Modifier.padding(paddingValues)) {
             if (query.isBlank()) {
                 Box(modifier = Modifier.fillMaxWidth().padding(32.dp)) {
-                    Text(
-                        text = if (isIndexing) "正在建立搜索索引…" else "输入关键字搜索全部专辑里的歌曲",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Text(
+                            text = if (isIndexing) {
+                                stringResource(R.string.search_indexing)
+                            } else {
+                                stringResource(R.string.search_empty_hint)
+                            },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
             } else {
                 MusicListScreen(
@@ -213,10 +267,18 @@ fun SearchScreen(
                             musicFile = musicFile,
                             config = config,
                             onSuccess = {
-                                Toast.makeText(context, "Cached: ${musicFile.name}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.toast_cached_song, musicFile.name),
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             },
                             onFailure = { error ->
-                                Toast.makeText(context, "Failed to cache: ${error.message}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.toast_cache_song_failed, error.message ?: ""),
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         )
                     },

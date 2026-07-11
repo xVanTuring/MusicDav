@@ -1,3 +1,206 @@
 <resources>
+    <!--
+        Naming convention for string resources:
+          - Screen-scoped strings are prefixed with the owning screen, e.g.
+            `home_`, `player_`, `server_`, `cache_`, `album_`.
+          - Strings shared across many screens use one of:
+              `action_`  - a user-triggerable action / button label
+              `common_`  - shared nouns/labels/formatted text
+              `nav_`     - navigation destination labels
+              `toast_`   - transient system messages (Toast/Snackbar)
+        Default resource values are Chinese (中文为主); see values-en/ for
+        the English translation.
+    -->
     <string name="app_name">MusicDav</string>
+
+    <!-- nav_* : navigation destination labels -->
+    <string name="nav_albums">专辑</string>
+    <string name="nav_servers">服务器</string>
+    <string name="nav_cache">缓存</string>
+
+    <!-- action_* : shared user actions -->
+    <string name="action_cancel">取消</string>
+    <string name="action_save">保存</string>
+    <string name="action_delete">删除</string>
+    <string name="action_confirm">确定</string>
+    <string name="action_edit">编辑</string>
+    <string name="action_add">添加</string>
+    <string name="action_search">搜索</string>
+    <string name="action_back">返回</string>
+    <string name="action_refresh">刷新</string>
+    <string name="action_retry">重试</string>
+    <string name="action_clear">清除</string>
+
+    <!-- common_* : shared labels / formatted text -->
+    <string name="common_favorites">收藏夹</string>
+    <string name="common_song_count">%1$d 首歌曲</string>
+    <string name="common_no_music">暂无音乐</string>
+    <string name="common_favorite_desc">收藏</string>
+    <string name="common_unfavorite_desc">取消收藏</string>
+    <string name="common_cached_desc">已缓存</string>
+    <string name="common_cache_desc">缓存</string>
+    <string name="common_loading">加载中…</string>
+
+    <!-- toast_* : transient system messages -->
+    <string name="toast_press_again_exit">再按一次退出应用</string>
+    <string name="toast_cached_song">已缓存：%1$s</string>
+    <string name="toast_cache_song_failed">缓存失败：%1$s</string>
+
+    <!-- player_* : BottomPlayerBar (mini player) + NowPlayingScreen -->
+    <string name="player_now_playing">正在播放</string>
+    <string name="player_cover_desc">专辑封面</string>
+    <string name="player_mode_repeat_single">单曲循环</string>
+    <string name="player_mode_repeat_all">列表循环</string>
+    <string name="player_mode_play_once">顺序播放</string>
+    <string name="player_previous_desc">上一首</string>
+    <string name="player_next_desc">下一首</string>
+    <string name="player_play_desc">播放</string>
+    <string name="player_pause_desc">暂停</string>
+
+    <!-- album_* : AlbumDetailScreen -->
+    <string name="album_extracting_metadata">提取元数据：%1$d/%2$d</string>
+    <string name="album_toast_fetch_failed_use_cache">无法获取最新数据，使用缓存列表</string>
+    <string name="album_toast_caching_album">正在缓存 %1$d 首歌曲…</string>
+    <string name="album_toast_cache_album_failed">专辑缓存失败：%1$s</string>
+    <string name="album_cache_album_desc">缓存专辑</string>
+    <string name="album_edit_desc">编辑专辑</string>
+
+    <!-- search_* : SearchScreen -->
+    <string name="search_placeholder">搜索歌曲名 / 艺术家</string>
+    <string name="search_empty_hint">输入关键字搜索全部专辑里的歌曲</string>
+    <string name="search_indexing">正在建立搜索索引…</string>
+
+    <!-- home_* : AlbumListScreen (home screen) -->
+    <string name="home_delete_title">删除专辑</string>
+    <string name="home_delete_message">确定要删除专辑\"%1$s\"吗？</string>
+    <string name="home_view_grid">切换到网格视图</string>
+    <string name="home_view_carousel">切换到唱片视图</string>
+    <string name="home_menu_desc">更多</string>
+    <string name="home_cover_default_desc">默认专辑封面</string>
+
+    <!-- ie_* : AlbumListScreen import/export menu and dialogs -->
+    <string name="ie_title">导入/导出</string>
+    <string name="ie_export">导出配置</string>
+    <string name="ie_import">导入配置</string>
+    <string name="ie_strategy_title">导入策略</string>
+    <string name="ie_strategy_prompt">请选择导入方式：</string>
+    <string name="ie_strategy_overwrite_desc">• 覆盖：删除现有配置，导入新配置</string>
+    <string name="ie_strategy_merge_desc">• 合并：保留现有配置，添加新配置</string>
+    <string name="ie_strategy_update_desc">• 更新：同名配置更新，其他保留</string>
+    <string name="ie_overwrite">覆盖</string>
+    <string name="ie_merge">合并</string>
+    <string name="ie_update">更新</string>
+    <string name="ie_hint_title">提示</string>
+    <string name="ie_export_success">导出成功！\n服务器配置: %1$d 个\n专辑: %2$d 个</string>
+    <string name="ie_export_failed">导出失败: %1$s</string>
+    <string name="ie_import_failed">导入失败: %1$s</string>
+    <string name="ie_result_title">导入结果</string>
+    <string name="ie_result_done">导入完成！</string>
+    <string name="ie_result_imported_configs">导入服务器配置: %1$d</string>
+    <string name="ie_result_updated_configs">更新服务器配置: %1$d</string>
+    <string name="ie_result_imported_albums">导入专辑: %1$d</string>
+    <string name="ie_result_skipped_configs">跳过服务器配置: %1$d</string>
+
+    <!-- server_* : ServerConfigListScreen + ServerConfigCreateScreen -->
+    <string name="server_list_title">服务器配置</string>
+    <string name="server_add">新建配置</string>
+    <string name="server_empty">还没有服务器配置</string>
+    <string name="server_address_with_backup">%1$s（+%2$d 个备用地址）</string>
+    <string name="server_user_label">用户：%1$s</string>
+    <string name="server_delete_title">删除服务器配置</string>
+    <string name="server_delete_message">确定要删除服务器配置\"%1$s\"吗？</string>
+    <string name="server_create_title">新建服务器配置</string>
+    <string name="server_edit_title">编辑服务器配置</string>
+    <string name="server_section_basic">基本信息</string>
+    <string name="server_section_address">服务器地址</string>
+    <string name="server_section_credentials">登录凭据</string>
+    <string name="server_name">配置名称</string>
+    <string name="server_primary_address">主地址</string>
+    <string name="server_backup_address">备用地址 %1$d</string>
+    <string name="server_add_backup">添加备用地址</string>
+    <string name="server_remove_address_desc">删除地址</string>
+    <string name="server_address_hint">支持配置多个地址（如内网IP + 公网域名），连接时按顺序自动探测并使用第一个可用的地址</string>
+    <string name="server_username">用户名</string>
+    <string name="server_password">密码</string>
+    <string name="server_password_show_desc">显示密码</string>
+    <string name="server_password_hide_desc">隐藏密码</string>
+    <string name="server_test">测试连接</string>
+    <string name="server_testing">正在测试连接…</string>
+    <string name="server_test_success_desc">连接成功</string>
+    <string name="server_test_failure_desc">连接失败</string>
+    <string name="server_test_default_error">无法连接</string>
+    <string name="server_error_required_fields">请填写所有必填项</string>
+    <string name="server_error_test_prereq">请先填写地址、用户名和密码后再测试连接</string>
+    <string name="server_available">可用</string>
+    <string name="server_unavailable">不可用</string>
+    <string name="server_checking">检测中…</string>
+    <string name="server_tap_to_check">点击检测可用性</string>
+    <string name="server_addr_primary">主地址</string>
+    <string name="server_addr_backup">备用地址 %1$d</string>
+
+    <!-- picker_* : FolderPickerScreen -->
+    <string name="picker_select">选择</string>
+    <string name="picker_current_path">当前路径</string>
+    <string name="picker_go_up">返回上级</string>
+    <string name="picker_folder_desc">文件夹</string>
+    <string name="picker_enter_folder_desc">进入文件夹</string>
+    <string name="picker_file_desc">文件</string>
+
+    <!-- cache_* : CacheManagementScreen -->
+    <string name="cache_title">缓存管理</string>
+    <string name="cache_usage">缓存用量</string>
+    <string name="cache_songs_cached">%1$d 首已缓存</string>
+    <string name="cache_free_space">%1$s 可用空间</string>
+    <string name="cache_active_downloads">正在下载</string>
+    <string name="cache_cached_songs">已缓存歌曲 (%1$d)</string>
+    <string name="cache_clear_all">全部清除</string>
+    <string name="cache_empty">暂无缓存歌曲</string>
+    <string name="cache_last_accessed">%1$s前访问</string>
+    <string name="cache_last_accessed_now">刚刚访问</string>
+    <string name="cache_unit_minutes">%1$d 分钟</string>
+    <string name="cache_unit_hours">%1$d 小时</string>
+    <string name="cache_unit_days">%1$d 天</string>
+    <string name="cache_unit_weeks">%1$d 周</string>
+    <string name="cache_delete_desc">删除</string>
+    <string name="cache_delete_title">删除缓存歌曲</string>
+    <string name="cache_delete_message">确定要从缓存中删除\"%1$s\"吗？</string>
+    <string name="cache_clear_all_title">清除所有缓存</string>
+    <string name="cache_clear_all_message">确定要删除所有缓存歌曲吗？此操作无法撤销。</string>
+    <string name="cache_downloading">下载中</string>
+    <string name="cache_cancel_desc">取消</string>
+    <string name="cache_completed_desc">已完成</string>
+    <string name="cache_failed_desc">失败</string>
+
+    <!-- album_* : AlbumCreateForm -->
+    <string name="album_create_title">新建专辑</string>
+    <string name="album_edit_title">编辑专辑</string>
+    <string name="album_section_server">服务器配置</string>
+    <string name="album_section_basic">基本信息</string>
+    <string name="album_use_existing_server">使用现有服务器配置</string>
+    <string name="album_select_server">选择服务器配置</string>
+    <string name="album_create_server_config">新建服务器配置...</string>
+    <string name="album_webdav_url">WebDAV 地址</string>
+    <string name="album_username">用户名</string>
+    <string name="album_password">密码</string>
+    <string name="album_name">专辑名称</string>
+    <string name="album_music_folder">音乐文件夹</string>
+    <string name="album_no_folder">未选择文件夹</string>
+    <string name="album_select_folder">选择文件夹</string>
+    <string name="album_reselect_folder">重新选择</string>
+    <string name="album_folder_desc">文件夹</string>
+    <string name="album_cover">专辑封面</string>
+    <string name="album_select_cover">选择封面</string>
+    <string name="album_tap_select_cover">点击选择封面</string>
+    <string name="album_cover_reselect_hint">点击重新选择，长按清除</string>
+    <string name="album_cover_preview_desc">封面预览</string>
+    <string name="album_cover_picker_title">选择封面图片</string>
+    <string name="album_cover_picker_subtitle">点击图片文件可选择作为封面</string>
+    <string name="album_save">保存专辑</string>
+    <string name="album_saving">保存中…</string>
+    <string name="album_error_fill_credentials">请填写地址、用户名和密码</string>
+    <string name="album_error_fill_all">请填写所有字段</string>
+    <string name="album_error_choose_folder">请选择一个文件夹</string>
+    <string name="album_error_connection_failed">连接失败：%1$s</string>
+    <string name="album_clear_cover_title">清除封面选择</string>
+    <string name="album_clear_cover_message">确定要清除已选择的封面图片吗？</string>
 </resources>

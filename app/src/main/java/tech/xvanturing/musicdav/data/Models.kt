@@ -377,22 +377,54 @@ object ServerConfigRepository {
 object PlaylistCache {
     private const val PREF_NAME = "playlist_cache_prefs"
 
+    // Process-lifetime in-memory memoization of parsed playlists, keyed by albumId.
+    private val memCache = java.util.concurrent.ConcurrentHashMap<String, List<MusicFile>>()
+
     fun load(context: android.content.Context, albumId: String): List<MusicFile> {
-        val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
-        val json = prefs.getString(albumId, "[]") ?: "[]"
-        return parseMusicFiles(json)
+        memCache[albumId]?.let { return it }
+        return readFromDisk(context, albumId)
     }
 
     fun save(context: android.content.Context, albumId: String, musicFiles: List<MusicFile>) {
         val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
         prefs.edit { putString(albumId, toJson(musicFiles)) }
+        memCache[albumId] = musicFiles
     }
 
     fun clear(context: android.content.Context, albumId: String) {
         val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
         prefs.edit { remove(albumId) }
+        memCache.remove(albumId)
     }
-    
+
+    /**
+     * Warms the in-memory cache for a single album from disk if not already present.
+     * Intended to be called from a background thread (e.g. Dispatchers.IO).
+     */
+    fun preload(context: android.content.Context, albumId: String) {
+        if (!memCache.containsKey(albumId)) {
+            readFromDisk(context, albumId)
+        }
+    }
+
+    /**
+     * Warms the in-memory cache for multiple albums from disk.
+     * Intended to be called from a background thread (e.g. Dispatchers.IO).
+     */
+    fun preloadAll(context: android.content.Context, albumIds: List<String>) {
+        for (albumId in albumIds) {
+            preload(context, albumId)
+        }
+    }
+
+    private fun readFromDisk(context: android.content.Context, albumId: String): List<MusicFile> {
+        val prefs = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
+        val json = prefs.getString(albumId, "[]") ?: "[]"
+        val result = parseMusicFiles(json)
+        memCache[albumId] = result
+        return result
+    }
+
     private fun parseMusicFiles(json: String): List<MusicFile> {
         val arr = org.json.JSONArray(json)
         val result = mutableListOf<MusicFile>()

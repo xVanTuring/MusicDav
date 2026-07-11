@@ -1,58 +1,96 @@
 package tech.xvanturing.musicdav.ui.theme
 
-import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+private val VinylLoungeDarkColorScheme = darkColorScheme(
+    primary = VinylGoldDark,
+    onPrimary = OnVinylGoldDark,
+    primaryContainer = VinylGoldContainerDark,
+    onPrimaryContainer = OnVinylGoldContainerDark,
+    secondary = WarmCreamDark,
+    onSecondary = OnWarmCreamDark,
+    secondaryContainer = WarmCreamContainerDark,
+    onSecondaryContainer = OnWarmCreamContainerDark,
+    tertiary = TerracottaDark,
+    onTertiary = OnVinylGoldDark,
+    background = EspressoBackgroundDark,
+    onBackground = IvoryOnBackgroundDark,
+    surface = EspressoSurfaceDark,
+    onSurface = IvoryOnSurfaceDark,
+    surfaceVariant = EspressoSurfaceVariantDark,
+    onSurfaceVariant = MutedWarmGreyDark,
+    surfaceContainerLowest = EspressoBackgroundDark,
+    surfaceContainerLow = EspressoSurfaceContainerLowDark,
+    surfaceContainer = EspressoSurfaceDark,
+    surfaceContainerHigh = EspressoSurfaceContainerHighDark,
+    surfaceContainerHighest = EspressoSurfaceContainerHighestDark,
+    error = BrickRedDark,
+    onError = OnBrickRedDark,
+    errorContainer = BrickRedContainerDark,
+    onErrorContainer = OnBrickRedContainerDark,
+    outline = WarmOutlineDark,
+    outlineVariant = WarmOutlineVariantDark,
+    inverseSurface = IvoryOnBackgroundDark,
+    inverseOnSurface = EspressoBackgroundDark,
+    inversePrimary = AmberBronzeLight
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+private val VinylLoungeLightColorScheme = lightColorScheme(
+    primary = AmberBronzeLight,
+    onPrimary = OnAmberBronzeLight,
+    primaryContainer = AmberBronzeContainerLight,
+    onPrimaryContainer = OnAmberBronzeContainerLight,
+    secondary = TaupeLight,
+    onSecondary = OnTaupeLight,
+    secondaryContainer = TaupeContainerLight,
+    onSecondaryContainer = OnTaupeContainerLight,
+    tertiary = TerracottaLight,
+    onTertiary = OnAmberBronzeLight,
+    background = IvoryPaperBackgroundLight,
+    onBackground = EspressoOnBackgroundLight,
+    surface = IvoryPaperSurfaceLight,
+    onSurface = EspressoOnSurfaceLight,
+    surfaceVariant = IvoryPaperSurfaceVariantLight,
+    onSurfaceVariant = MutedWarmGreyLight,
+    surfaceContainerLowest = IvoryPaperSurfaceLight,
+    surfaceContainerLow = IvoryPaperSurfaceContainerLowLight,
+    surfaceContainer = IvoryPaperSurfaceContainerHighLight,
+    surfaceContainerHigh = IvoryPaperSurfaceContainerHighestLight,
+    surfaceContainerHighest = IvoryPaperSurfaceContainerHighestLight,
+    error = BrickRedLight,
+    onError = OnBrickRedLight,
+    errorContainer = BrickRedContainerLight,
+    onErrorContainer = OnBrickRedContainerLight,
+    outline = WarmOutlineLight,
+    outlineVariant = WarmOutlineVariantLight,
+    inverseSurface = EspressoOnBackgroundLight,
+    inverseOnSurface = IvoryPaperBackgroundLight,
+    inversePrimary = VinylGoldDark
 )
 
+/**
+ * Vinyl Lounge theme: warm, dark-first, record-store mood.
+ *
+ * Dynamic color (Material You) is intentionally disabled by default so the
+ * brand palette is what actually ships; the parameter is kept for callers
+ * that explicitly want to opt back into wallpaper-derived color.
+ */
 @Composable
 fun MusicDavTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    val colorScheme = if (darkTheme) VinylLoungeDarkColorScheme else VinylLoungeLightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
+        shapes = Shapes,
         content = content
     )
 }

@@ -1,0 +1,195 @@
+<resources>
+    <!-- English translation. See values/strings.xml for the naming convention. -->
+    <string name="app_name">MusicDav</string>
+
+    <!-- nav_* : navigation destination labels -->
+    <string name="nav_albums">Albums</string>
+    <string name="nav_servers">Servers</string>
+    <string name="nav_cache">Cache</string>
+
+    <!-- action_* : shared user actions -->
+    <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_confirm">OK</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_add">Add</string>
+    <string name="action_search">Search</string>
+    <string name="action_back">Back</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_clear">Clear</string>
+
+    <!-- common_* : shared labels / formatted text -->
+    <string name="common_favorites">Favorites</string>
+    <string name="common_song_count">%1$d songs</string>
+    <string name="common_no_music">No music</string>
+    <string name="common_favorite_desc">Favorite</string>
+    <string name="common_unfavorite_desc">Unfavorite</string>
+    <string name="common_cached_desc">Cached</string>
+    <string name="common_cache_desc">Cache</string>
+    <string name="common_loading">Loading…</string>
+
+    <!-- toast_* : transient system messages -->
+    <string name="toast_press_again_exit">Press back again to exit</string>
+    <string name="toast_cached_song">Cached: %1$s</string>
+    <string name="toast_cache_song_failed">Failed to cache: %1$s</string>
+
+    <!-- player_* : BottomPlayerBar (mini player) + NowPlayingScreen -->
+    <string name="player_now_playing">Now Playing</string>
+    <string name="player_cover_desc">Album Cover</string>
+    <string name="player_mode_repeat_single">Repeat One</string>
+    <string name="player_mode_repeat_all">Repeat All</string>
+    <string name="player_mode_play_once">Play in Order</string>
+    <string name="player_previous_desc">Previous</string>
+    <string name="player_next_desc">Next</string>
+    <string name="player_play_desc">Play</string>
+    <string name="player_pause_desc">Pause</string>
+
+    <!-- album_* : AlbumDetailScreen -->
+    <string name="album_extracting_metadata">Extracting metadata: %1$d/%2$d</string>
+    <string name="album_toast_fetch_failed_use_cache">Couldn\'t fetch the latest data, using cached list</string>
+    <string name="album_toast_caching_album">Caching %1$d songs…</string>
+    <string name="album_toast_cache_album_failed">Failed to cache album: %1$s</string>
+    <string name="album_cache_album_desc">Cache Album</string>
+    <string name="album_edit_desc">Edit Album</string>
+
+    <!-- search_* : SearchScreen -->
+    <string name="search_placeholder">Search by title / artist</string>
+    <string name="search_empty_hint">Enter a keyword to search across all albums</string>
+    <string name="search_indexing">Building search index…</string>
+
+    <!-- home_* : AlbumListScreen (home screen) -->
+    <string name="home_delete_title">Delete Album</string>
+    <string name="home_delete_message">Delete album \"%1$s\"?</string>
+    <string name="home_view_grid">Switch to grid view</string>
+    <string name="home_view_carousel">Switch to carousel view</string>
+    <string name="home_menu_desc">More</string>
+    <string name="home_cover_default_desc">Default album cover</string>
+
+    <!-- ie_* : AlbumListScreen import/export menu and dialogs -->
+    <string name="ie_title">Import / Export</string>
+    <string name="ie_export">Export Config</string>
+    <string name="ie_import">Import Config</string>
+    <string name="ie_strategy_title">Import Strategy</string>
+    <string name="ie_strategy_prompt">Choose an import method:</string>
+    <string name="ie_strategy_overwrite_desc">• Overwrite: delete existing config, import new</string>
+    <string name="ie_strategy_merge_desc">• Merge: keep existing config, add new</string>
+    <string name="ie_strategy_update_desc">• Update: update same-name configs, keep the rest</string>
+    <string name="ie_overwrite">Overwrite</string>
+    <string name="ie_merge">Merge</string>
+    <string name="ie_update">Update</string>
+    <string name="ie_hint_title">Notice</string>
+    <string name="ie_export_success">Export succeeded!\nServer configs: %1$d\nAlbums: %2$d</string>
+    <string name="ie_export_failed">Export failed: %1$s</string>
+    <string name="ie_import_failed">Import failed: %1$s</string>
+    <string name="ie_result_title">Import Result</string>
+    <string name="ie_result_done">Import complete!</string>
+    <string name="ie_result_imported_configs">Imported server configs: %1$d</string>
+    <string name="ie_result_updated_configs">Updated server configs: %1$d</string>
+    <string name="ie_result_imported_albums">Imported albums: %1$d</string>
+    <string name="ie_result_skipped_configs">Skipped server configs: %1$d</string>
+
+    <!-- server_* : ServerConfigListScreen + ServerConfigCreateScreen -->
+    <string name="server_list_title">Server Configurations</string>
+    <string name="server_add">Add Config</string>
+    <string name="server_empty">No server configs yet</string>
+    <string name="server_address_with_backup">%1$s (+%2$d more)</string>
+    <string name="server_user_label">User: %1$s</string>
+    <string name="server_delete_title">Delete Server Configuration</string>
+    <string name="server_delete_message">Delete server configuration \"%1$s\"?</string>
+    <string name="server_create_title">New Server Config</string>
+    <string name="server_edit_title">Edit Server Config</string>
+    <string name="server_section_basic">Basic Info</string>
+    <string name="server_section_address">Server Address</string>
+    <string name="server_section_credentials">Credentials</string>
+    <string name="server_name">Config Name</string>
+    <string name="server_primary_address">Primary Address</string>
+    <string name="server_backup_address">Backup Address %1$d</string>
+    <string name="server_add_backup">Add Backup Address</string>
+    <string name="server_remove_address_desc">Remove Address</string>
+    <string name="server_address_hint">Supports multiple addresses (e.g. LAN IP + public domain); connects using the first reachable one, in order</string>
+    <string name="server_username">Username</string>
+    <string name="server_password">Password</string>
+    <string name="server_password_show_desc">Show password</string>
+    <string name="server_password_hide_desc">Hide password</string>
+    <string name="server_test">Test Connection</string>
+    <string name="server_testing">Testing connection…</string>
+    <string name="server_test_success_desc">Connection succeeded</string>
+    <string name="server_test_failure_desc">Connection failed</string>
+    <string name="server_test_default_error">Unable to connect</string>
+    <string name="server_error_required_fields">Please fill in all required fields</string>
+    <string name="server_error_test_prereq">Please fill in the address, username, and password before testing</string>
+    <string name="server_available">Available</string>
+    <string name="server_unavailable">Unavailable</string>
+    <string name="server_checking">Checking…</string>
+    <string name="server_tap_to_check">Tap to check availability</string>
+    <string name="server_addr_primary">Primary</string>
+    <string name="server_addr_backup">Backup %1$d</string>
+
+    <!-- picker_* : FolderPickerScreen -->
+    <string name="picker_select">Select</string>
+    <string name="picker_current_path">Current path</string>
+    <string name="picker_go_up">Up</string>
+    <string name="picker_folder_desc">Folder</string>
+    <string name="picker_enter_folder_desc">Open folder</string>
+    <string name="picker_file_desc">File</string>
+
+    <!-- cache_* : CacheManagementScreen -->
+    <string name="cache_title">Cache Management</string>
+    <string name="cache_usage">Cache Usage</string>
+    <string name="cache_songs_cached">%1$d songs cached</string>
+    <string name="cache_free_space">%1$s free space available</string>
+    <string name="cache_active_downloads">Active Downloads</string>
+    <string name="cache_cached_songs">Cached Songs (%1$d)</string>
+    <string name="cache_clear_all">Clear All</string>
+    <string name="cache_empty">No cached songs</string>
+    <string name="cache_last_accessed">Last accessed %1$s ago</string>
+    <string name="cache_last_accessed_now">Accessed just now</string>
+    <string name="cache_unit_minutes">%1$d min</string>
+    <string name="cache_unit_hours">%1$d hr</string>
+    <string name="cache_unit_days">%1$d d</string>
+    <string name="cache_unit_weeks">%1$d w</string>
+    <string name="cache_delete_desc">Delete</string>
+    <string name="cache_delete_title">Delete Cached Song</string>
+    <string name="cache_delete_message">Delete \"%1$s\" from cache?</string>
+    <string name="cache_clear_all_title">Clear All Cache</string>
+    <string name="cache_clear_all_message">Delete all cached songs? This cannot be undone.</string>
+    <string name="cache_downloading">Downloading</string>
+    <string name="cache_cancel_desc">Cancel</string>
+    <string name="cache_completed_desc">Completed</string>
+    <string name="cache_failed_desc">Failed</string>
+
+    <!-- album_* : AlbumCreateForm -->
+    <string name="album_create_title">Create Album</string>
+    <string name="album_edit_title">Edit Album</string>
+    <string name="album_section_server">Server Configuration</string>
+    <string name="album_section_basic">Basic Info</string>
+    <string name="album_use_existing_server">Use existing server config</string>
+    <string name="album_select_server">Select server config</string>
+    <string name="album_create_server_config">New server config...</string>
+    <string name="album_webdav_url">WebDAV URL</string>
+    <string name="album_username">Username</string>
+    <string name="album_password">Password</string>
+    <string name="album_name">Album Name</string>
+    <string name="album_music_folder">Music Folder</string>
+    <string name="album_no_folder">No folder selected</string>
+    <string name="album_select_folder">Select Folder</string>
+    <string name="album_reselect_folder">Reselect</string>
+    <string name="album_folder_desc">Folder</string>
+    <string name="album_cover">Album Cover</string>
+    <string name="album_select_cover">Select Cover</string>
+    <string name="album_tap_select_cover">Tap to select cover</string>
+    <string name="album_cover_reselect_hint">Tap to change, long-press to clear</string>
+    <string name="album_cover_preview_desc">Cover preview</string>
+    <string name="album_cover_picker_title">Select Cover Image</string>
+    <string name="album_cover_picker_subtitle">Tap an image file to use it as the cover</string>
+    <string name="album_save">Save Album</string>
+    <string name="album_saving">Saving…</string>
+    <string name="album_error_fill_credentials">Please fill in the URL, username, and password</string>
+    <string name="album_error_fill_all">Please fill in all fields</string>
+    <string name="album_error_choose_folder">Please choose a folder</string>
+    <string name="album_error_connection_failed">Connection failed: %1$s</string>
+    <string name="album_clear_cover_title">Clear Cover Selection</string>
+    <string name="album_clear_cover_message">Clear the selected cover image?</string>
+</resources>

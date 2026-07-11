@@ -5,15 +5,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -26,6 +27,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,7 +37,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -47,14 +48,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import tech.xvanturing.musicdav.R
 import tech.xvanturing.musicdav.data.ServerConfig
 import tech.xvanturing.musicdav.data.ServerConfigRepository
 import tech.xvanturing.musicdav.data.WebDavConfig
+import tech.xvanturing.musicdav.ui.components.AppTopBar
 import tech.xvanturing.musicdav.webdav.WebDavClient
 
 private enum class ConnTestStatus { TESTING, SUCCESS, FAILURE }
@@ -86,19 +90,22 @@ fun ServerConfigCreateScreen(
 
     val isEditing = editingConfig != null
 
+    // Strings needed inside non-composable callbacks (onClick / coroutine bodies).
+    val requiredFieldsError = stringResource(R.string.server_error_required_fields)
+    val testPrereqError = stringResource(R.string.server_error_test_prereq)
+    val defaultConnError = stringResource(R.string.server_test_default_error)
+
     BackHandler {
         onCancel()
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (isEditing) "编辑服务器配置" else "新建服务器配置") },
-                navigationIcon = {
-                    IconButton(onClick = onCancel) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                }
+            AppTopBar(
+                title = stringResource(
+                    if (isEditing) R.string.server_edit_title else R.string.server_create_title
+                ),
+                onBack = onCancel
             )
         },
         bottomBar = {
@@ -117,13 +124,13 @@ fun ServerConfigCreateScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
-                            Text("取消")
+                            Text(stringResource(R.string.action_cancel))
                         }
                         Button(
                             onClick = {
                                 val cleanedUrls = urls.map { it.trim() }.filter { it.isNotBlank() }
                                 if (name.isBlank() || cleanedUrls.isEmpty() || username.isBlank() || password.isBlank()) {
-                                    errorMessage = "请填写所有必填项"
+                                    errorMessage = requiredFieldsError
                                     return@Button
                                 }
 
@@ -152,7 +159,7 @@ fun ServerConfigCreateScreen(
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("保存")
+                            Text(stringResource(R.string.action_save))
                         }
                     }
                 }
@@ -167,19 +174,20 @@ fun ServerConfigCreateScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            ConfigSection(title = "基本信息") {
+            ConfigSection(title = stringResource(R.string.server_section_basic)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; errorMessage = null },
-                    label = { Text("配置名称") },
+                    label = { Text(stringResource(R.string.server_name)) },
                     modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small,
                     singleLine = true
                 )
             }
 
-            ConfigSection(title = "服务器地址") {
+            ConfigSection(title = stringResource(R.string.server_section_address)) {
                 Text(
-                    text = "支持配置多个地址（如内网IP + 公网域名），连接时按顺序自动探测并使用第一个可用的地址",
+                    text = stringResource(R.string.server_address_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -193,8 +201,14 @@ fun ServerConfigCreateScreen(
                         OutlinedTextField(
                             value = address,
                             onValueChange = { urls[index] = it; errorMessage = null; testStates.remove(index) },
-                            label = { Text(if (index == 0) "主地址" else "备用地址 $index") },
+                            label = {
+                                Text(
+                                    if (index == 0) stringResource(R.string.server_primary_address)
+                                    else stringResource(R.string.server_backup_address, index)
+                                )
+                            },
                             modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.small,
                             singleLine = true,
                             isError = testState?.status == ConnTestStatus.FAILURE,
                             trailingIcon = {
@@ -205,12 +219,12 @@ fun ServerConfigCreateScreen(
                                     )
                                     ConnTestStatus.SUCCESS -> Icon(
                                         imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = "连接成功",
+                                        contentDescription = stringResource(R.string.server_test_success_desc),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                     ConnTestStatus.FAILURE -> Icon(
                                         imageVector = Icons.Default.Error,
-                                        contentDescription = "连接失败",
+                                        contentDescription = stringResource(R.string.server_test_failure_desc),
                                         tint = MaterialTheme.colorScheme.error
                                     )
                                     null -> {}
@@ -229,29 +243,35 @@ fun ServerConfigCreateScreen(
                             onClick = { urls.removeAt(index); testStates.clear() },
                             enabled = urls.size > 1
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = "删除地址")
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = stringResource(R.string.server_remove_address_desc)
+                            )
                         }
                     }
                 }
                 TextButton(onClick = { urls.add("") }) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text(" 添加备用地址")
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.server_add_backup))
                 }
             }
 
-            ConfigSection(title = "登录凭据") {
+            ConfigSection(title = stringResource(R.string.server_section_credentials)) {
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it; errorMessage = null },
-                    label = { Text("用户名") },
+                    label = { Text(stringResource(R.string.server_username)) },
                     modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small,
                     singleLine = true
                 )
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it; errorMessage = null },
-                    label = { Text("密码") },
+                    label = { Text(stringResource(R.string.server_password)) },
                     modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small,
                     singleLine = true,
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -259,20 +279,23 @@ fun ServerConfigCreateScreen(
                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
                             Icon(
                                 imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = if (passwordVisible) "隐藏密码" else "显示密码"
+                                contentDescription = stringResource(
+                                    if (passwordVisible) R.string.server_password_hide_desc
+                                    else R.string.server_password_show_desc
+                                )
                             )
                         }
                     }
                 )
             }
 
-            OutlinedButton(
+            FilledTonalButton(
                 onClick = {
                     val candidates = urls.mapIndexed { index, url -> index to url.trim() }
                         .filter { it.second.isNotBlank() }
                     if (candidates.isEmpty() || username.isBlank() || password.isBlank()) {
-                        errorMessage = "请先填写地址、用户名和密码后再测试连接"
-                        return@OutlinedButton
+                        errorMessage = testPrereqError
+                        return@FilledTonalButton
                     }
                     errorMessage = null
                     isTesting = true
@@ -282,7 +305,7 @@ fun ServerConfigCreateScreen(
                             val result = webDavClient.testConnection(WebDavConfig(url, username, password))
                             testStates[index] = result.fold(
                                 onSuccess = { UrlTestState(ConnTestStatus.SUCCESS) },
-                                onFailure = { e -> UrlTestState(ConnTestStatus.FAILURE, e.message ?: "无法连接") }
+                                onFailure = { e -> UrlTestState(ConnTestStatus.FAILURE, e.message ?: defaultConnError) }
                             )
                         }
                         isTesting = false
@@ -296,7 +319,8 @@ fun ServerConfigCreateScreen(
                 } else {
                     Icon(Icons.Default.Wifi, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
-                Text(if (isTesting) " 正在测试连接..." else " 测试连接")
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(if (isTesting) R.string.server_testing else R.string.server_test))
             }
         }
     }
@@ -310,6 +334,7 @@ private fun ConfigSection(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )

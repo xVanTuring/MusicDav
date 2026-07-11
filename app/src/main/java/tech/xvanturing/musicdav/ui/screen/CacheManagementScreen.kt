@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
-import android.util.Log
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
@@ -40,32 +39,32 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import tech.xvanturing.musicdav.CacheTask
 import tech.xvanturing.musicdav.CacheTaskStatus
 import tech.xvanturing.musicdav.MusicCacheService
+import tech.xvanturing.musicdav.R
 import tech.xvanturing.musicdav.data.MusicFile
-import tech.xvanturing.musicdav.data.WebDavConfig
 import tech.xvanturing.musicdav.player.CacheMetadata
 import tech.xvanturing.musicdav.player.MusicCache
+import tech.xvanturing.musicdav.ui.components.AppTopBar
 import kotlinx.coroutines.launch
 
 private const val MAX_CACHE_BYTES = 20L * 1024 * 1024 * 1024
@@ -77,29 +76,29 @@ fun CacheManagementScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    
+
     var cachedSongs by remember { mutableStateOf<List<CacheMetadata>>(emptyList()) }
     var activeTasks by remember { mutableStateOf<List<CacheTask>>(emptyList()) }
     var totalCacheSize by remember { mutableStateOf(0L) }
     var showClearConfirm by remember { mutableStateOf(false) }
     var songToDelete by remember { mutableStateOf<CacheMetadata?>(null) }
     var refreshKey by remember { mutableStateOf(0) }
-    
+
     val serviceConnection = remember {
         object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
                 val binder = service as MusicCacheService.LocalBinder
                 val musicCacheService = binder.getService()
-                
+
                 musicCacheService.addListener(object : MusicCacheService.CacheTaskListener {
                     override fun onTaskStarted(taskId: String, musicFile: MusicFile) {
                         activeTasks = musicCacheService.getActiveTasks()
                     }
-                    
+
                     override fun onTaskProgress(taskId: String, progress: Int) {
                         activeTasks = musicCacheService.getActiveTasks()
                     }
-                    
+
                     override fun onTaskCompleted(taskId: String, path: String?) {
                         activeTasks = musicCacheService.getActiveTasks()
                         coroutineScope.launch {
@@ -109,11 +108,11 @@ fun CacheManagementScreen(
                             }
                         }
                     }
-                    
+
                     override fun onTaskFailed(taskId: String, error: Throwable) {
                         activeTasks = musicCacheService.getActiveTasks()
                     }
-                    
+
                     override fun onAllTasksCompleted() {
                         activeTasks = musicCacheService.getActiveTasks()
                         coroutineScope.launch {
@@ -124,23 +123,23 @@ fun CacheManagementScreen(
                         }
                     }
                 })
-                
+
                 activeTasks = musicCacheService.getActiveTasks()
             }
-            
+
             override fun onServiceDisconnected(name: ComponentName?) {
                 activeTasks = emptyList()
             }
         }
     }
-    
+
     LaunchedEffect(refreshKey) {
         refreshCacheData(context, coroutineScope) { songs, size ->
             cachedSongs = songs
             totalCacheSize = size
         }
     }
-    
+
     DisposableEffect(context) {
         val intent = Intent(context, MusicCacheService::class.java)
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
@@ -148,7 +147,7 @@ fun CacheManagementScreen(
             context.unbindService(serviceConnection)
         }
     }
-    
+
     fun formatBytes(bytes: Long): String {
         return when {
             bytes >= 1024 * 1024 * 1024 -> "%.2f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
@@ -157,20 +156,32 @@ fun CacheManagementScreen(
             else -> "$bytes B"
         }
     }
-    
+
     fun formatRelativeTime(timestamp: Long): String {
         val now = System.currentTimeMillis()
         val diff = now - timestamp
-        
+
         return when {
-            diff < 60 * 1000 -> "just now"
-            diff < 60 * 60 * 1000 -> "${diff / (60 * 1000)} min ago"
-            diff < 24 * 60 * 60 * 1000 -> "${diff / (60 * 60 * 1000)} hours ago"
-            diff < 7 * 24 * 60 * 60 * 1000 -> "${diff / (24 * 60 * 60 * 1000)} days ago"
-            else -> "${diff / (7 * 24 * 60 * 60 * 1000)} weeks ago"
+            diff < 60 * 1000 -> context.getString(R.string.cache_last_accessed_now)
+            diff < 60 * 60 * 1000 -> context.getString(
+                R.string.cache_last_accessed,
+                context.getString(R.string.cache_unit_minutes, diff / (60 * 1000))
+            )
+            diff < 24 * 60 * 60 * 1000 -> context.getString(
+                R.string.cache_last_accessed,
+                context.getString(R.string.cache_unit_hours, diff / (60 * 60 * 1000))
+            )
+            diff < 7 * 24 * 60 * 60 * 1000 -> context.getString(
+                R.string.cache_last_accessed,
+                context.getString(R.string.cache_unit_days, diff / (24 * 60 * 60 * 1000))
+            )
+            else -> context.getString(
+                R.string.cache_last_accessed,
+                context.getString(R.string.cache_unit_weeks, diff / (7 * 24 * 60 * 60 * 1000))
+            )
         }
     }
-    
+
     fun extractSongName(url: String): String {
         val lastSlash = url.lastIndexOf('/')
         if (lastSlash != -1) {
@@ -183,11 +194,11 @@ fun CacheManagementScreen(
         }
         return url
     }
-    
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Cache Management") },
+            AppTopBar(
+                title = stringResource(R.string.cache_title),
                 actions = {
                     IconButton(onClick = {
                         coroutineScope.launch {
@@ -199,7 +210,7 @@ fun CacheManagementScreen(
                     }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh"
+                            contentDescription = stringResource(R.string.action_refresh)
                         )
                     }
                 }
@@ -222,16 +233,16 @@ fun CacheManagementScreen(
                     formatBytes = ::formatBytes
                 )
             }
-            
+
             if (activeTasks.isNotEmpty()) {
                 item {
                     Text(
-                        text = "Active Downloads",
+                        text = stringResource(R.string.cache_active_downloads),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-                
+
                 items(activeTasks) { task ->
                     ActiveDownloadItem(
                         task = task,
@@ -242,7 +253,7 @@ fun CacheManagementScreen(
                     )
                 }
             }
-            
+
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -250,17 +261,18 @@ fun CacheManagementScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Cached Songs (${cachedSongs.size})",
+                        text = stringResource(R.string.cache_cached_songs, cachedSongs.size),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    
-                    Button(
+
+                    OutlinedButton(
                         onClick = { showClearConfirm = true },
                         enabled = cachedSongs.isNotEmpty(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        )
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Clear,
@@ -268,21 +280,28 @@ fun CacheManagementScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Clear All")
+                        Text(stringResource(R.string.cache_clear_all))
                     }
                 }
             }
-            
+
             if (cachedSongs.isEmpty()) {
                 item {
-                    Box(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(32.dp),
-                        contentAlignment = Alignment.Center
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        Icon(
+                            imageVector = Icons.Filled.MusicNote,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
                         Text(
-                            text = "No cached songs",
+                            text = stringResource(R.string.cache_empty),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -301,12 +320,12 @@ fun CacheManagementScreen(
             }
         }
     }
-    
+
     if (showClearConfirm) {
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
-            title = { Text("Clear All Cache") },
-            text = { Text("Are you sure you want to delete all cached songs? This cannot be undone.") },
+            title = { Text(stringResource(R.string.cache_clear_all_title)) },
+            text = { Text(stringResource(R.string.cache_clear_all_message)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -323,22 +342,29 @@ fun CacheManagementScreen(
                         containerColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("Clear All")
+                    Text(stringResource(R.string.cache_clear_all))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearConfirm = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
     }
-    
+
     if (songToDelete != null) {
         AlertDialog(
             onDismissRequest = { songToDelete = null },
-            title = { Text("Delete Cached Song") },
-            text = { Text("Are you sure you want to delete \"${extractSongName(songToDelete!!.url)}\" from cache?") },
+            title = { Text(stringResource(R.string.cache_delete_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.cache_delete_message,
+                        extractSongName(songToDelete!!.url)
+                    )
+                )
+            },
             confirmButton = {
                 Button(
                     onClick = {
@@ -355,12 +381,12 @@ fun CacheManagementScreen(
                         containerColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("Delete")
+                    Text(stringResource(R.string.action_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { songToDelete = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -376,9 +402,10 @@ fun CacheStatisticsCard(
 ) {
     val usagePercent = ((totalCacheSize.toFloat() / maxCacheSize) * 100).coerceIn(0f, 100f)
     val freeSpace = maxCacheSize - totalCacheSize
-    
+
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
         )
@@ -386,7 +413,7 @@ fun CacheStatisticsCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
@@ -395,12 +422,12 @@ fun CacheStatisticsCard(
             ) {
                 Column {
                     Text(
-                        text = "Cache Usage",
+                        text = stringResource(R.string.cache_usage),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     Text(
-                        text = "$songCount songs cached",
+                        text = stringResource(R.string.cache_songs_cached, songCount),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                     )
@@ -411,21 +438,21 @@ fun CacheStatisticsCard(
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
-            
+
             LinearProgressIndicator(
                 progress = { usagePercent / 100f },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(8.dp),
-                color = if (usagePercent > 80f) 
-                    MaterialTheme.colorScheme.error 
-                else 
+                color = if (usagePercent > 80f)
+                    MaterialTheme.colorScheme.error
+                else
                     MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
             )
-            
+
             Text(
-                text = "${formatBytes(freeSpace)} free space available",
+                text = stringResource(R.string.cache_free_space, formatBytes(freeSpace)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
             )
@@ -439,8 +466,19 @@ fun ActiveDownloadItem(
     formatBytes: (Long) -> String,
     onCancel: () -> Unit
 ) {
+    val statusText = when (task.status) {
+        CacheTaskStatus.DOWNLOADING -> stringResource(R.string.cache_downloading)
+        CacheTaskStatus.COMPLETED -> stringResource(R.string.cache_completed_desc)
+        CacheTaskStatus.FAILED -> stringResource(R.string.cache_failed_desc)
+        else -> null
+    }
+
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
     ) {
         Row(
             modifier = Modifier
@@ -464,7 +502,7 @@ fun ActiveDownloadItem(
                     style = MaterialTheme.typography.labelSmall
                 )
             }
-            
+
             Column(
                 modifier = Modifier.weight(1f)
             ) {
@@ -474,19 +512,36 @@ fun ActiveDownloadItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = formatBytes(task.musicFile.size),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = formatBytes(task.musicFile.size),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (statusText != null) {
+                        Text(
+                            text = "•",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = statusText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
-            
+
             when (task.status) {
                 CacheTaskStatus.DOWNLOADING -> {
                     IconButton(onClick = onCancel) {
                         Icon(
                             imageVector = Icons.Default.Clear,
-                            contentDescription = "Cancel",
+                            contentDescription = stringResource(R.string.cache_cancel_desc),
                             tint = MaterialTheme.colorScheme.error
                         )
                     }
@@ -494,14 +549,14 @@ fun ActiveDownloadItem(
                 CacheTaskStatus.COMPLETED -> {
                     Icon(
                         imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Completed",
+                        contentDescription = stringResource(R.string.cache_completed_desc),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
                 CacheTaskStatus.FAILED -> {
                     Icon(
                         imageVector = Icons.Default.Error,
-                        contentDescription = "Failed",
+                        contentDescription = stringResource(R.string.cache_failed_desc),
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
@@ -521,8 +576,9 @@ fun CachedSongItem(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
         )
     ) {
         Row(
@@ -538,7 +594,7 @@ fun CachedSongItem(
                     .size(48.dp)
                     .background(
                         color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(8.dp)
+                        shape = MaterialTheme.shapes.small
                     ),
                 contentAlignment = Alignment.Center
             ) {
@@ -549,13 +605,13 @@ fun CachedSongItem(
                     modifier = Modifier.size(24.dp)
                 )
             }
-            
+
             Column(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
                     text = extractSongName(metadata.url),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -574,17 +630,17 @@ fun CachedSongItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "Last accessed ${formatRelativeTime(metadata.lastAccessTime)}",
+                        text = formatRelativeTime(metadata.lastAccessTime),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-            
+
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
+                    contentDescription = stringResource(R.string.cache_delete_desc),
                     tint = MaterialTheme.colorScheme.error
                 )
             }

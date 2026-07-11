@@ -5,6 +5,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,32 +14,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,19 +49,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
+import tech.xvanturing.musicdav.R
 import tech.xvanturing.musicdav.data.ServerConfigRepository
 import tech.xvanturing.musicdav.data.Album
 import tech.xvanturing.musicdav.data.relativizeAlbumUrl
 import tech.xvanturing.musicdav.data.resolveAlbumUrl
+import tech.xvanturing.musicdav.ui.components.AppTopBar
 import tech.xvanturing.musicdav.webdav.WebDavClient
 import kotlinx.coroutines.launch
 import okhttp3.Credentials
@@ -94,7 +94,7 @@ fun AlbumCreateForm(
     var selectingCover by remember { mutableStateOf(false) }
     var showClearCoverDialog by remember { mutableStateOf(false) }
 
-    
+
     val webDavClient = remember { WebDavClient() }
     val coroutineScope = rememberCoroutineScope()
 
@@ -205,8 +205,8 @@ fun AlbumCreateForm(
             webDavConfig = getCurrentWebDavConfig(),
             initialPath = directoryUrl ?: getCurrentWebDavConfig().url,
             config = FilePickerConfig(
-                title = "选择封面图片",
-                subtitle = "点击图片文件可选择作为封面",
+                title = stringResource(R.string.album_cover_picker_title),
+                subtitle = stringResource(R.string.album_cover_picker_subtitle),
                 mode = FilePickerMode.FILE_ONLY,
                 allowedFileExtensions = setOf("jpg", "jpeg", "png", "webp"),
                 showFileIcons = true,
@@ -235,7 +235,7 @@ fun AlbumCreateForm(
             webDavConfig = getCurrentWebDavConfig(),
             initialPath = directoryUrl ?: getCurrentWebDavConfig().url,
             config = FilePickerConfig(
-                title = "选择文件夹",
+                title = stringResource(R.string.album_select_folder),
                 mode = FilePickerMode.DIRECTORY_ONLY,
                 showClearSelectionButton = false,
                 showFileIcons = true,
@@ -257,170 +257,159 @@ fun AlbumCreateForm(
     } else {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text(if (editingAlbum != null) "Edit Album" else "Create Album") },
-                    navigationIcon = {
-                        IconButton(onClick = onCancel) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                        }
-                    }
+                AppTopBar(
+                    title = stringResource(
+                        if (editingAlbum != null) R.string.album_edit_title else R.string.album_create_title
+                    ),
+                    onBack = onCancel
                 )
             }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.Top
-        ) {
-            // Server config selection
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Checkbox(
-                    checked = useExistingConfig,
-                    onCheckedChange = {
-                        useExistingConfig = it
-                        if (!it) {
-                            selectedServerConfigId = null
-                            url = ""
-                            username = ""
-                            password = ""
-                            manuallySelectedCoverImageUrl = null
-                        }
-                    }
-                )
-                Text(
-                    text = "使用现有服务器配置",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            if (useExistingConfig) {
-                // Server config dropdown
-                var expanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = !expanded }) {
-                    OutlinedTextField(
-                        value = selectedServerConfigId?.let { id ->
-                            serverConfigs.find { it.id == id }?.name ?: ""
-                        } ?: "",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("选择服务器配置") },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
+                // Server config selection
+                ConfigSection(title = stringResource(R.string.album_section_server)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        serverConfigs.forEach { config ->
-                            DropdownMenuItem(
-                                text = { Text(config.name) },
-                                onClick = {
-                                    selectedServerConfigId = config.id
-                                    expanded = false
+                        Checkbox(
+                            checked = useExistingConfig,
+                            onCheckedChange = {
+                                useExistingConfig = it
+                                if (!it) {
+                                    selectedServerConfigId = null
+                                    url = ""
+                                    username = ""
+                                    password = ""
+                                    manuallySelectedCoverImageUrl = null
                                 }
-                            )
-                        }
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = { Text("新建服务器配置...") },
-                            onClick = {
-                                expanded = false
-                                onCreateServerConfig()
                             }
+                        )
+                        Text(
+                            text = stringResource(R.string.album_use_existing_server),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    if (useExistingConfig) {
+                        // Server config dropdown
+                        var expanded by remember { mutableStateOf(false) }
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = !expanded }) {
+                            OutlinedTextField(
+                                value = selectedServerConfigId?.let { id ->
+                                    serverConfigs.find { it.id == id }?.name ?: ""
+                                } ?: "",
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text(stringResource(R.string.album_select_server)) },
+                                modifier = Modifier
+                                    .menuAnchor()
+                                    .fillMaxWidth(),
+                                shape = MaterialTheme.shapes.small,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                serverConfigs.forEach { config ->
+                                    DropdownMenuItem(
+                                        text = { Text(config.name) },
+                                        onClick = {
+                                            selectedServerConfigId = config.id
+                                            expanded = false
+                                        }
+                                    )
+                                }
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.album_create_server_config)) },
+                                    onClick = {
+                                        expanded = false
+                                        onCreateServerConfig()
+                                    }
+                                )
+                            }
+                        }
+
+                    } else {
+                        // Manual input fields
+                        OutlinedTextField(
+                            value = url,
+                            onValueChange = {
+                                url = it; errorMessage = null; directoryUrl =
+                                null; manuallySelectedCoverImageUrl = null
+                            },
+                            label = { Text(stringResource(R.string.album_webdav_url)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.small,
+                            singleLine = true,
+                            enabled = !isLoading
+                        )
+                        OutlinedTextField(
+                            value = username,
+                            onValueChange = {
+                                username = it; errorMessage = null; manuallySelectedCoverImageUrl = null
+                            },
+                            label = { Text(stringResource(R.string.album_username)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.small,
+                            singleLine = true,
+                            enabled = !isLoading
+                        )
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = {
+                                password = it; errorMessage = null; manuallySelectedCoverImageUrl = null
+                            },
+                            label = { Text(stringResource(R.string.album_password)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.small,
+                            singleLine = true,
+                            enabled = !isLoading,
+                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
                         )
                     }
                 }
 
-            } else {
-                // Manual input fields
-                OutlinedTextField(
-                    value = url,
-                    onValueChange = {
-                        url = it; errorMessage = null; directoryUrl =
-                        null; manuallySelectedCoverImageUrl = null
-                    },
-                    label = { Text("WebDAV URL") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = !isLoading
-                )
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = {
-                        username = it; errorMessage = null; manuallySelectedCoverImageUrl = null
-                    },
-                    label = { Text("Username") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = !isLoading
-                )
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = {
-                        password = it; errorMessage = null; manuallySelectedCoverImageUrl = null
-                    },
-                    label = { Text("Password") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = !isLoading,
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                )
-            }
-
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it; errorMessage = null },
-                label = { Text("Album Name") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = !isLoading
-            )
-            if (errorMessage != null) {
-                Text(
-                    text = errorMessage!!,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 显示目录选择和封面选择的区域
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // 目录选择卡片
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                // Album name section
+                ConfigSection(title = stringResource(R.string.album_section_basic)) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it; errorMessage = null },
+                        label = { Text(stringResource(R.string.album_name)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                        singleLine = true,
+                        enabled = !isLoading
                     )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
+                    if (errorMessage != null) {
                         Text(
-                            text = "音乐文件夹",
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            text = errorMessage!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
                         )
+                    }
+                }
 
+                // 音乐文件夹选择
+                ConfigSection(title = stringResource(R.string.album_music_folder)) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         if (directoryUrl != null) {
                             val folderName = directoryUrl!!.trimEnd('/').substringAfterLast('/')
                             Row(
@@ -429,7 +418,7 @@ fun AlbumCreateForm(
                             ) {
                                 Icon(
                                     Icons.Default.Folder,
-                                    contentDescription = "Folder",
+                                    contentDescription = stringResource(R.string.album_folder_desc),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                                 Text(
@@ -442,7 +431,7 @@ fun AlbumCreateForm(
                             }
                         } else {
                             Text(
-                                text = "未选择文件夹",
+                                text = stringResource(R.string.album_no_folder),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -452,13 +441,12 @@ fun AlbumCreateForm(
                             onClick = {
                                 val config = getCurrentWebDavConfig()
                                 if (config.url.isBlank() || config.username.isBlank() || config.password.isBlank()) {
-                                    errorMessage = "Please fill in URL, username and password"
+                                    errorMessage = context.getString(R.string.album_error_fill_credentials)
                                     return@Button
                                 }
                                 selectingFolder = true
                             },
-                            enabled = !isLoading && !isDirectoryLoading,
-                            modifier = Modifier.padding(top = 12.dp)
+                            enabled = !isLoading && !isDirectoryLoading
                         ) {
                             if (isDirectoryLoading) {
                                 CircularProgressIndicator(
@@ -468,30 +456,20 @@ fun AlbumCreateForm(
                                     color = MaterialTheme.colorScheme.onPrimary
                                 )
                             }
-                            Text(if (directoryUrl != null) "重新选择" else "选择文件夹")
+                            Text(
+                                if (directoryUrl != null) stringResource(R.string.album_reselect_folder)
+                                else stringResource(R.string.album_select_folder)
+                            )
                         }
                     }
                 }
 
-                // 封面选择卡片
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                ) {
+                // 专辑封面选择
+                ConfigSection(title = stringResource(R.string.album_cover)) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            text = "专辑封面",
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-
                         // 封面图片预览按钮
                         Box(
                             modifier = Modifier.size(120.dp)
@@ -517,16 +495,16 @@ fun AlbumCreateForm(
                                         .data(coverImageUrl)
                                         .httpHeaders(headers)
                                         .build(),
-                                    contentDescription = "封面预览",
+                                    contentDescription = stringResource(R.string.album_cover_preview_desc),
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .clip(RoundedCornerShape(8.dp))
+                                        .clip(MaterialTheme.shapes.medium)
                                         .combinedClickable(
                                             onClick = {
                                                 val webDavConfig = getCurrentWebDavConfig()
                                                 if (webDavConfig.url.isBlank() || webDavConfig.username.isBlank() || webDavConfig.password.isBlank()) {
-                                                    errorMessage = "Please fill in URL, username and password"
+                                                    errorMessage = context.getString(R.string.album_error_fill_credentials)
                                                     return@combinedClickable
                                                 }
                                                 selectingCover = true
@@ -538,24 +516,24 @@ fun AlbumCreateForm(
                                 )
                             } else {
                                 // 未选择封面，显示默认按钮
-                                    Card(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .combinedClickable(
-                                                onClick = {
-                                                    val config = getCurrentWebDavConfig()
-                                                    if (config.url.isBlank() || config.username.isBlank() || config.password.isBlank()) {
-                                                        errorMessage = "Please fill in URL, username and password"
-                                                        return@combinedClickable
-                                                    }
-                                                    selectingCover = true
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(MaterialTheme.shapes.medium)
+                                        .combinedClickable(
+                                            onClick = {
+                                                val config = getCurrentWebDavConfig()
+                                                if (config.url.isBlank() || config.username.isBlank() || config.password.isBlank()) {
+                                                    errorMessage = context.getString(R.string.album_error_fill_credentials)
+                                                    return@combinedClickable
                                                 }
-                                            ),
+                                                selectingCover = true
+                                            }
+                                        ),
+                                    shape = MaterialTheme.shapes.medium,
                                     colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surface
-                                    ),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                                    )
                                 ) {
                                     Box(
                                         modifier = Modifier.fillMaxSize(),
@@ -567,13 +545,13 @@ fun AlbumCreateForm(
                                         ) {
                                             Icon(
                                                 Icons.Default.Image,
-                                                contentDescription = "选择封面",
+                                                contentDescription = stringResource(R.string.album_select_cover),
                                                 modifier = Modifier.size(32.dp),
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(
-                                                text = "选择封面",
+                                                text = stringResource(R.string.album_select_cover),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -584,30 +562,28 @@ fun AlbumCreateForm(
                         }
 
                         Text(
-                            text = if (manuallySelectedCoverImageUrl != null) "点击重新选择，长按清除" else "点击选择封面",
+                            text = if (manuallySelectedCoverImageUrl != null) {
+                                stringResource(R.string.album_cover_reselect_hint)
+                            } else {
+                                stringResource(R.string.album_tap_select_cover)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 8.dp)
                         )
                     }
                 }
-            }
 
-            // 保存按钮区域
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 24.dp)
-            ) {
+                // 保存按钮
                 Button(
                     onClick = {
                         val config = getCurrentWebDavConfig()
                         if (name.isBlank() || config.url.isBlank() || config.username.isBlank() || config.password.isBlank()) {
-                            errorMessage = "Please fill in all fields"
+                            errorMessage = context.getString(R.string.album_error_fill_all)
                             return@Button
                         }
                         if (directoryUrl == null) {
-                            errorMessage = "Please choose a folder"
+                            errorMessage = context.getString(R.string.album_error_choose_folder)
                             return@Button
                         }
                         isLoading = true
@@ -621,7 +597,7 @@ fun AlbumCreateForm(
                                         webDavClient.findCoverImageUrl(config, targetUrl)
                                     val coverUrl = coverResult.getOrNull()
                                     // CoverImagePickerDialog now returns full HTTP URLs, so we can use them directly
-                                val finalCoverUrl = manuallySelectedCoverImageUrl ?: coverUrl
+                                    val finalCoverUrl = manuallySelectedCoverImageUrl ?: coverUrl
                                     isLoading = false
                                     val finalServerConfigId =
                                         if (useExistingConfig) selectedServerConfigId else null
@@ -656,7 +632,10 @@ fun AlbumCreateForm(
                                 }
                                 .onFailure { e ->
                                     isLoading = false
-                                    errorMessage = "Connection failed: ${e.message}"
+                                    errorMessage = context.getString(
+                                        R.string.album_error_connection_failed,
+                                        e.message
+                                    )
                                 }
                         }
                     },
@@ -671,36 +650,62 @@ fun AlbumCreateForm(
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                     }
-                    Text(if (isLoading) "Saving..." else (if (editingAlbum != null) "更新专辑" else "保存专辑"))
+                    Text(if (isLoading) stringResource(R.string.album_saving) else stringResource(R.string.album_save))
                 }
             }
         }
-    }
 
-    // Clear cover confirmation dialog
-    if (showClearCoverDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearCoverDialog = false },
-            title = { Text("清除封面选择") },
-            text = { Text("确定要清除已选择的封面图片吗？") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        manuallySelectedCoverImageUrl = null
-                        showClearCoverDialog = false
+        // Clear cover confirmation dialog
+        if (showClearCoverDialog) {
+            AlertDialog(
+                onDismissRequest = { showClearCoverDialog = false },
+                title = { Text(stringResource(R.string.album_clear_cover_title)) },
+                text = { Text(stringResource(R.string.album_clear_cover_message)) },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            manuallySelectedCoverImageUrl = null
+                            showClearCoverDialog = false
+                        }
+                    ) {
+                        Text(stringResource(R.string.action_confirm))
                     }
-                ) {
-                    Text("确定")
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showClearCoverDialog = false }
+                    ) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
                 }
-            },
-            dismissButton = {
-                Button(
-                    onClick = { showClearCoverDialog = false }
-                ) {
-                    Text("取消")
-                }
-            }
-        )
+            )
+        }
     }
+}
+
+@Composable
+private fun ConfigSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            content()
+        }
     }
 }

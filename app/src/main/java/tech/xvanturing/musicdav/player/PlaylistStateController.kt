@@ -463,19 +463,21 @@ class PlaylistStateController {
     }
 
     fun loadCachedCovers(context: android.content.Context, songs: List<MusicFile>) {
-        val newCachedCovers = mutableMapOf<String, String>()
-        for (song in songs) {
-            CoverCache.getCoverPath(context, song.cacheKey)?.let { path ->
-                newCachedCovers[song.url] = path
-                Log.d("PlaylistStateController", "Cached cover found for: ${song.name} -> $path")
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val newCachedCovers = mutableMapOf<String, String>()
+            for (song in songs) {
+                CoverCache.getCoverPath(context, song.cacheKey)?.let { path ->
+                    newCachedCovers[song.url] = path
+                    Log.d("PlaylistStateController", "Cached cover found for: ${song.name} -> $path")
+                }
             }
+            Log.d("PlaylistStateController", "Loaded ${newCachedCovers.size} cached covers for current album")
+
+            val mergedMap = _state.value.cachedCoverMap.toMutableMap()
+            mergedMap.putAll(newCachedCovers)
+
+            _state.value = _state.value.copy(cachedCoverMap = mergedMap)
         }
-        Log.d("PlaylistStateController", "Loaded ${newCachedCovers.size} cached covers for current album")
-
-        val mergedMap = _state.value.cachedCoverMap.toMutableMap()
-        mergedMap.putAll(newCachedCovers)
-
-        _state.value = _state.value.copy(cachedCoverMap = mergedMap)
     }
 
     fun cacheCurrentSong(webDavConfig: WebDavConfig) {

@@ -1,37 +1,57 @@
 package tech.xvanturing.musicdav.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Row
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
+import tech.xvanturing.musicdav.R
 import tech.xvanturing.musicdav.data.MusicFile
 import tech.xvanturing.musicdav.data.cacheKey
 import coil3.compose.AsyncImage
@@ -111,7 +131,7 @@ private fun Content(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
             }
 
@@ -146,6 +166,12 @@ private fun Content(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        Icon(
+                            imageVector = Icons.Default.ErrorOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(40.dp)
+                        )
                         Text(
                             text = errorMessage,
                             color = MaterialTheme.colorScheme.error,
@@ -160,16 +186,29 @@ private fun Content(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "No music files found",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.common_no_music),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+private val ItemCoverSize = 52.dp
 
 @Composable
 fun MusicListItem(
@@ -197,93 +236,166 @@ fun MusicListItem(
 
     val coverUrl = cachedCoverUrl ?: albumCoverUrl
 
-    ListItem(
-        headlineContent = {
-            Column {
+    // Memoize the remote-cover Coil request so the Basic-auth header block and
+    // ImageRequest allocation aren't rebuilt on every recomposition (e.g. on
+    // playback-state changes) — only when the cover URL or WebDAV config change.
+    val remoteCoverRequest = if (coverUrl != null && context != null && cachedCoverUrl == null) {
+        remember(coverUrl, currentWebDavConfig) {
+            ImageRequest.Builder(context)
+                .data(coverUrl)
+                .httpHeaders(
+                    if (currentWebDavConfig != null) {
+                        NetworkHeaders.Builder()
+                            .set(
+                                "Authorization",
+                                Credentials.basic(
+                                    currentWebDavConfig.username,
+                                    currentWebDavConfig.password
+                                )
+                            )
+                            .build()
+                    } else {
+                        NetworkHeaders.EMPTY
+                    }
+                )
+                .crossfade(true)
+                .build()
+        }
+    } else {
+        null
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .background(
+                if (isPlaying) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent
+            )
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(modifier = Modifier.size(ItemCoverSize)) {
+                if (coverUrl != null && context != null) {
+                    if (cachedCoverUrl != null) {
+                        AsyncImage(
+                            model = coverUrl,
+                            contentDescription = musicFile.displayName,
+                            modifier = Modifier
+                                .size(ItemCoverSize)
+                                .clip(MaterialTheme.shapes.small),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    } else {
+                        AsyncImage(
+                            model = remoteCoverRequest,
+                            contentDescription = musicFile.displayName,
+                            modifier = Modifier
+                                .size(ItemCoverSize)
+                                .clip(MaterialTheme.shapes.small),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(ItemCoverSize)
+                            .clip(MaterialTheme.shapes.small)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = if (isPlaying) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                }
+
+                // "Now playing" equalizer indicator, overlaid on the leading edge of the cover.
+                if (isPlaying) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clip(MaterialTheme.shapes.small)
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.35f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        PlayingEqualizer()
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = musicFile.displayName,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee(),
+                    overflow = if (isPlaying) TextOverflow.Clip else TextOverflow.Ellipsis,
+                    modifier = if (isPlaying) Modifier.basicMarquee() else Modifier,
                     softWrap = false,
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isPlaying) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
                 )
                 musicFile.artist?.let { artist ->
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = artist,
                         maxLines = 1,
-                        modifier = Modifier.basicMarquee(),
+                        overflow = if (isPlaying) TextOverflow.Clip else TextOverflow.Ellipsis,
+                        modifier = if (isPlaying) Modifier.basicMarquee() else Modifier,
                         softWrap = false,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
-        },
-        supportingContent = {
-            val durationText = if (musicFile.durationMs > 0) formatDuration(musicFile.durationMs) else null
-            val sizeText = formatFileSize(musicFile.size)
-            val text = if (durationText != null) "$durationText • $sizeText" else sizeText
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodySmall
-            )
-        },
-        leadingContent = {
-            if (coverUrl != null && context != null) {
-                if (cachedCoverUrl != null) {
-                    AsyncImage(
-                        model = coverUrl,
-                        contentDescription = musicFile.displayName,
-                        modifier = Modifier.size(48.dp),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                    )
-                } else {
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(coverUrl)
-                            .httpHeaders(
-                                if (currentWebDavConfig != null) {
-                                    NetworkHeaders.Builder()
-                                        .set(
-                                            "Authorization",
-                                            Credentials.basic(
-                                                currentWebDavConfig.username,
-                                                currentWebDavConfig.password
-                                            )
-                                        )
-                                        .build()
-                                } else {
-                                    NetworkHeaders.EMPTY
-                                }
-                            )
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = musicFile.displayName,
-                        modifier = Modifier.size(48.dp),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                    )
-                }
-            } else {
-                Icon(
-                    imageVector = Icons.Default.MusicNote,
-                    contentDescription = null,
-                    tint = if (isPlaying)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                Spacer(modifier = Modifier.height(2.dp))
+                val durationText = if (musicFile.durationMs > 0) formatDuration(musicFile.durationMs) else null
+                val sizeText = formatFileSize(musicFile.size)
+                val supportingText = if (durationText != null) "$durationText • $sizeText" else sizeText
+                Text(
+                    text = supportingText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        },
-        trailingContent = if (enableCache || enableFavorite) {
-            {
+
+            if (enableCache || enableFavorite) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (enableFavorite) {
+                        val favoriteScale by animateFloatAsState(
+                            targetValue = if (isFavorite) 1.15f else 1f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            ),
+                            label = "favoriteScale"
+                        )
                         IconButton(onClick = onToggleFavorite) {
                             Icon(
                                 imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                contentDescription = if (isFavorite) "取消收藏" else "收藏",
-                                tint = if (isFavorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                contentDescription = if (isFavorite) {
+                                    stringResource(R.string.common_unfavorite_desc)
+                                } else {
+                                    stringResource(R.string.common_favorite_desc)
+                                },
+                                tint = if (isFavorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.scale(favoriteScale)
                             )
                         }
                     }
@@ -304,30 +416,74 @@ fun MusicListItem(
                             } else if (isCached) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "Cached",
+                                    contentDescription = stringResource(R.string.common_cached_desc),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             } else {
                                 Icon(
                                     imageVector = Icons.Default.Download,
-                                    contentDescription = "Cache"
+                                    contentDescription = stringResource(R.string.common_cache_desc)
                                 )
                             }
                         }
                     }
                 }
             }
-        } else {
-            null
-        },
-        colors = ListItemDefaults.colors(
-            containerColor = if (isPlaying)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.surface
+        }
+    }
+}
+
+/**
+ * Small animated "now playing" equalizer: 3 gold bars bouncing at slightly
+ * different phases/durations so it reads as organic rather than mechanical.
+ */
+@Composable
+private fun PlayingEqualizer(
+    modifier: Modifier = Modifier
+) {
+    val barColor = MaterialTheme.colorScheme.primary
+    val infiniteTransition = rememberInfiniteTransition(label = "equalizer")
+    val bar1 by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(420, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
         ),
-        modifier = modifier.clickable(onClick = onClick)
+        label = "bar1"
     )
+    val bar2 by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(560, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar2"
+    )
+    val bar3 by infiniteTransition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(340, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar3"
+    )
+    Row(
+        modifier = modifier.height(16.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        listOf(bar1, bar2, bar3).forEach { fraction ->
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .fillMaxHeight(fraction)
+                    .background(barColor, RoundedCornerShape(1.dp))
+            )
+        }
+    }
 }
 
 private fun formatFileSize(bytes: Long): String {

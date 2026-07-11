@@ -1,19 +1,25 @@
 package tech.xvanturing.musicdav.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -28,23 +34,26 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.draw.clip
 import coil3.compose.AsyncImage
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import coil3.request.crossfade
-import tech.xvanturing.musicdav.data.PlaylistState
-import tech.xvanturing.musicdav.data.PlayMode
-import tech.xvanturing.musicdav.data.WebDavConfig
 import okhttp3.Credentials
+import tech.xvanturing.musicdav.R
+import tech.xvanturing.musicdav.data.PlayMode
+import tech.xvanturing.musicdav.data.PlaylistState
+import tech.xvanturing.musicdav.ui.theme.MotionSpec
+
+private val CoverSize = 48.dp
 
 @Composable
 fun BottomPlayerBar(
@@ -56,23 +65,21 @@ fun BottomPlayerBar(
     onOpenNowPlaying: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-//    if (playlistState.currentSong == null) return
-
     Surface(
         modifier = modifier.fillMaxWidth(),
-        tonalElevation = 8.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 3.dp,
         shadowElevation = 8.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .clickable(
                     enabled = playlistState.currentSong != null,
                     onClick = onOpenNowPlaying
                 )
         ) {
-            // Thin progress bar
+            // Thin progress line in primary (gold)
             val rawProgress = if (playlistState.duration > 0) {
                 (playlistState.currentPosition.toFloat() / playlistState.duration.toFloat()).coerceIn(0f, 1f)
             } else {
@@ -82,28 +89,21 @@ fun BottomPlayerBar(
                 targetValue = rawProgress,
                 label = "progress"
             )
-            
-            // Custom progress bar with rounded corners
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(4.dp)
-                    .background(
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(2.dp)
-                    )
+                    .height(2.dp)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(animatedProgress)
-                        .height(4.dp)
-                        .background(
-                            MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(2.dp)
-                        )
+                        .height(2.dp)
+                        .background(MaterialTheme.colorScheme.primary)
                 )
             }
-            
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -117,80 +117,55 @@ fun BottomPlayerBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                 // Album cover
-                     if (playlistState.currentCoverUrl != null) {
-                         val coverUrl = playlistState.currentCoverUrl!!
+                    val coverUrl = playlistState.currentCoverUrl
+                    if (coverUrl != null) {
+                        val headers = if (coverUrl.startsWith("http")) {
+                            val effectiveConfig = playlistState.effectiveWebDavConfig
+                            if (effectiveConfig != null &&
+                                effectiveConfig.username.isNotBlank() &&
+                                effectiveConfig.password.isNotBlank()
+                            ) {
+                                NetworkHeaders.Builder()
+                                    .set(
+                                        "Authorization",
+                                        Credentials.basic(effectiveConfig.username, effectiveConfig.password)
+                                    )
+                                    .build()
+                            } else {
+                                NetworkHeaders.EMPTY
+                            }
+                        } else {
+                            NetworkHeaders.EMPTY
+                        }
 
-                         when {
-                             coverUrl.startsWith("/") || coverUrl.startsWith("file://") -> {
-                                 AsyncImage(
-                                     model = coil3.request.ImageRequest.Builder(LocalContext.current)
-                                         .data(coverUrl)
-                                         .crossfade(true)
-                                         .build(),
-                                     contentDescription = "Album Cover",
-                                     modifier = Modifier
-                                         .size(48.dp)
-                                         .clip(RoundedCornerShape(8.dp))
-                                 )
-                             }
-                             coverUrl.startsWith("data:") -> {
-                                 AsyncImage(
-                                     model = coil3.request.ImageRequest.Builder(LocalContext.current)
-                                         .data(coverUrl)
-                                         .crossfade(true)
-                                         .build(),
-                                     contentDescription = "Album Cover",
-                                     modifier = Modifier
-                                         .size(48.dp)
-                                         .clip(RoundedCornerShape(8.dp))
-                                 )
-                             }
-                             coverUrl.startsWith("http") -> {
-                                 val effectiveConfig = playlistState.effectiveWebDavConfig
-                                 if (effectiveConfig != null &&
-                                     effectiveConfig.username.isNotBlank() &&
-                                     effectiveConfig.password.isNotBlank()) {
-                                     val headers = NetworkHeaders.Builder()
-                                         .set("Authorization", Credentials.basic(effectiveConfig.username, effectiveConfig.password))
-                                         .build()
-
-                                     AsyncImage(
-                                         model = coil3.request.ImageRequest.Builder(LocalContext.current)
-                                             .data(coverUrl)
-                                             .httpHeaders(headers)
-                                             .crossfade(true)
-                                             .build(),
-                                         contentDescription = "Album Cover",
-                                         modifier = Modifier
-                                             .size(48.dp)
-                                             .clip(RoundedCornerShape(8.dp))
-                                     )
-                                 } else {
-                                     AsyncImage(
-                                         model = coil3.request.ImageRequest.Builder(LocalContext.current)
-                                             .data(coverUrl)
-                                             .crossfade(true)
-                                             .build(),
-                                         contentDescription = "Album Cover",
-                                         modifier = Modifier
-                                             .size(48.dp)
-                                             .clip(RoundedCornerShape(8.dp))
-                                     )
-                                 }
-                             }
-                         }
-                      } else {
-                         // Default placeholder when no cover
-                         Box(
-                                      modifier = Modifier
-                                          .size(40.dp)
-                                          .clip(RoundedCornerShape(6.dp))
-                                 .background(
-                                     MaterialTheme.colorScheme.surfaceVariant,
-                                     RoundedCornerShape(8.dp)
-                                 )
-                         )
+                        AsyncImage(
+                            model = coil3.request.ImageRequest.Builder(LocalContext.current)
+                                .data(coverUrl)
+                                .httpHeaders(headers)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = stringResource(R.string.player_cover_desc),
+                            modifier = Modifier
+                                .size(CoverSize)
+                                .clip(MaterialTheme.shapes.small),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        // Default placeholder - same size/shape as the real cover.
+                        Box(
+                            modifier = Modifier
+                                .size(CoverSize)
+                                .clip(MaterialTheme.shapes.small)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
 
                     // Song info
@@ -199,8 +174,10 @@ fun BottomPlayerBar(
                     ) {
                         Text(
                             text = playlistState.currentSong?.displayName ?: "",
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.basicMarquee(),
                             softWrap = false
                         )
@@ -214,10 +191,10 @@ fun BottomPlayerBar(
 
                 // Controls
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 播放模式按钮
+                    // Play mode toggle - kept subtle here.
                     IconButton(
                         onClick = onTogglePlayMode,
                         modifier = Modifier.size(28.dp)
@@ -229,16 +206,15 @@ fun BottomPlayerBar(
                                 PlayMode.PLAY_ONCE -> Icons.Default.Repeat
                             },
                             contentDescription = when (playlistState.playMode) {
-                                PlayMode.REPEAT_SINGLE -> "单曲循环"
-                                PlayMode.REPEAT_ALL -> "列表循环"
-                                PlayMode.PLAY_ONCE -> "顺序播放"
+                                PlayMode.REPEAT_SINGLE -> stringResource(R.string.player_mode_repeat_single)
+                                PlayMode.REPEAT_ALL -> stringResource(R.string.player_mode_repeat_all)
+                                PlayMode.PLAY_ONCE -> stringResource(R.string.player_mode_play_once)
                             },
                             tint = when (playlistState.playMode) {
-                                PlayMode.REPEAT_SINGLE -> MaterialTheme.colorScheme.primary
-                                PlayMode.REPEAT_ALL -> MaterialTheme.colorScheme.primary
-                                PlayMode.PLAY_ONCE -> MaterialTheme.colorScheme.onSurface
+                                PlayMode.REPEAT_SINGLE, PlayMode.REPEAT_ALL -> MaterialTheme.colorScheme.primary
+                                PlayMode.PLAY_ONCE -> MaterialTheme.colorScheme.onSurfaceVariant
                             },
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 
@@ -249,20 +225,47 @@ fun BottomPlayerBar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipPrevious,
-                            contentDescription = "Previous",
+                            contentDescription = stringResource(R.string.player_previous_desc),
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(20.dp)
                         )
                     }
 
-                    IconButton(onClick = onPlayPause, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            imageVector = if (playlistState.isPlaying)
-                                Icons.Default.Pause
-                            else
-                                Icons.Default.PlayArrow,
-                            contentDescription = if (playlistState.isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(24.dp)
-                        )
+                    // Play/pause - circular tinted background, icon morphs via AnimatedContent.
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        IconButton(onClick = onPlayPause, modifier = Modifier.size(40.dp)) {
+                            AnimatedContent(
+                                targetState = playlistState.isPlaying,
+                                transitionSpec = {
+                                    (fadeIn(tween(MotionSpec.fast)) + scaleIn(
+                                        initialScale = 0.7f,
+                                        animationSpec = tween(MotionSpec.fast)
+                                    )) togetherWith
+                                        (fadeOut(tween(MotionSpec.fast)) + scaleOut(
+                                            targetScale = 0.7f,
+                                            animationSpec = tween(MotionSpec.fast)
+                                        ))
+                                },
+                                label = "playPause"
+                            ) { isPlaying ->
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) {
+                                        stringResource(R.string.player_pause_desc)
+                                    } else {
+                                        stringResource(R.string.player_play_desc)
+                                    },
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
                     }
 
                     IconButton(
@@ -272,7 +275,8 @@ fun BottomPlayerBar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipNext,
-                            contentDescription = "Next",
+                            contentDescription = stringResource(R.string.player_next_desc),
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(20.dp)
                         )
                     }
