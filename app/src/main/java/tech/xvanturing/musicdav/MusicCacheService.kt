@@ -48,9 +48,17 @@ class MusicCacheService : Service() {
     private val activeTasks = mutableMapOf<String, CacheTask>()
     private val taskListeners = mutableListOf<CacheTaskListener>()
 
+    // 通知栏优先展示"最近有进度更新"的任务，而不是固定展示最早插入的任务，
+    // 避免某个任务卡住/变慢时，通知栏一直显示它的旧进度，看不到其他已完成任务
+    private var lastActiveTaskId: String? = null
+
     companion object {
         private const val CHANNEL_ID = "music_cache_channel"
-        private const val NOTIFICATION_ID = 1001
+
+        // 不能等于 androidx.media3.session.DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID (1001)。
+        // 通知的唯一标识是 (包名, tag, id)，两者 tag 都为空，撞了同一个 id 会导致两个前台服务的通知互相顶替，
+        // 播放通知在缓存进行时被顶掉、缓存结束 stopForeground(REMOVE) 时又把播放通知一并清掉。
+        private const val NOTIFICATION_ID = 2001
         const val ACTION_START_CACHE = "tech.xvanturing.musicdav.action.START_CACHE"
         const val ACTION_CANCEL_CACHE = "tech.xvanturing.musicdav.action.CANCEL_CACHE"
         const val EXTRA_MUSIC_FILE = "music_file"
@@ -206,6 +214,7 @@ class MusicCacheService : Service() {
             status = CacheTaskStatus.DOWNLOADING
         )
         activeTasks[taskId] = task
+        lastActiveTaskId = taskId
 
         Log.d("MusicCacheService", "🎵 Starting cache: ${musicFile.name} (ID: $taskId)")
         notifyListeners { it.onTaskStarted(taskId, musicFile) }
@@ -214,6 +223,7 @@ class MusicCacheService : Service() {
         serviceScope.launch {
             MusicCache.cacheSong(applicationContext, musicFile, config) { progress ->
                 task.progress = progress
+                lastActiveTaskId = taskId
                Log.d("MusicCacheService", "📥 Cache progress: ${musicFile.name} - $progress%")
                 notifyListeners { it.onTaskProgress(taskId, progress) }
                 updateForegroundNotification()
@@ -221,11 +231,13 @@ class MusicCacheService : Service() {
                 .onSuccess { path ->
                     Log.d("MusicCacheService", "✅ Cache completed: ${musicFile.name}")
                     Log.d("MusicCacheService", "   Cached at: $path")
-                    
+
                     // 保持 DOWNLOADING 状态来显示 100% 的通知
                     task.progress = 100
+                    lastActiveTaskId = taskId
+                    notifyListeners { it.onTaskProgress(taskId, 100) }
                     updateForegroundNotification()
-                    
+
                     // 给通知系统时间来显示 100%
                     kotlinx.coroutines.delay(200)
                     
@@ -233,6 +245,9 @@ class MusicCacheService : Service() {
                     task.status = CacheTaskStatus.COMPLETED
                     notifyListeners { it.onTaskCompleted(taskId, path) }
                     activeTasks.remove(taskId)
+                    // 必须再刷新一次通知：否则通知会永远停在移除前的最后一帧内容
+                    // （比如这里的 100%），既不会显示其他任务也不会在没有任务时消失
+                    updateForegroundNotification()
                     checkAllTasksCompleted()
                 }
                 .onFailure { error ->
@@ -278,11 +293,19 @@ class MusicCacheService : Service() {
             return
         }
 
-        val firstTask = downloadingTasks.first()
-        Log.d("MusicCacheService", "📢 Updating notification: ${firstTask.musicFile.name} (${firstTask.progress}%)")
+        // 优先展示最近有进度更新的任务，如果它已经不在下载列表里（完成/失败/被移除），
+        // 才退回到列表里的第一个任务，避免通知栏一直卡在某个停滞不前的旧任务上
+        val displayTask = downloadingTasks.find { it.id == lastActiveTaskId } ?: downloadingTasks.first()
+        val extraCount = downloadingTasks.size - 1
+        val contentText = if (extraCount > 0) {
+            "${displayTask.musicFile.name} - ${displayTask.progress}% (还有 $extraCount 首排队中)"
+        } else {
+            "${displayTask.musicFile.name} - ${displayTask.progress}%"
+        }
+        Log.d("MusicCacheService", "📢 Updating notification: ${displayTask.musicFile.name} (${displayTask.progress}%)")
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Caching Music")
-            .setContentText("${firstTask.musicFile.name} - ${firstTask.progress}%")
+            .setContentText(contentText)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

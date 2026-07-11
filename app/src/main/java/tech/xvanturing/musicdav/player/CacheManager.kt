@@ -84,7 +84,9 @@ class CacheManager(private val context: Context) {
         override fun onTaskProgress(taskId: String, progress: Int) {
             _state.value = _state.value.copy(
                 isCaching = true,
-                cachingProgress = mapOf(taskId to progress)
+                // 合并更新而不是整体替换，避免并发任务（如当前歌曲 + 预读下一首）
+                // 互相覆盖对方的进度记录
+                cachingProgress = _state.value.cachingProgress + (taskId to progress)
             )
         }
 
