@@ -136,3 +136,11 @@ run this command
 ```bash
 ./gradlew assembleDebug -x lintDebug
 ```
+
+### how to take a screenshot for UI/UX review
+User usually runs the app on an Android emulator. Multiple devices (emulator + physical phone) may be attached at once, so always list devices first and target the emulator explicitly:
+```bash
+adb devices -l
+adb -s emulator-5554 exec-out screencap -p > screenshot.png
+```
+Then use the Read tool on the resulting PNG to view it. Do this proactively whenever discussing or iterating on UI/UX, without waiting for the user to ask each time.
