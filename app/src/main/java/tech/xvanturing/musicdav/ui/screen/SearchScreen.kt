@@ -1,6 +1,7 @@
 package tech.xvanturing.musicdav.ui.screen
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,8 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -34,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -149,6 +151,15 @@ fun SearchScreen(
 
     Scaffold(
         topBar = {
+            Box(
+                modifier = Modifier.pointerInput(Unit) {
+                    var dragY = 0f
+                    detectVerticalDragGestures(
+                        onDragEnd = { if (dragY > 120f) onBack(); dragY = 0f },
+                        onVerticalDrag = { change, amount -> dragY += amount; change.consume() }
+                    )
+                }
+            ) {
             TopAppBar(
                 title = {
                     TextField(
@@ -191,7 +202,7 @@ fun SearchScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            imageVector = Icons.Default.KeyboardArrowDown,
                             contentDescription = stringResource(R.string.action_back)
                         )
                     }
@@ -204,6 +215,7 @@ fun SearchScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             )
+            }
         },
         modifier = modifier
     ) { paddingValues ->

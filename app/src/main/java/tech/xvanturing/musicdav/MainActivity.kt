@@ -95,6 +95,14 @@ private sealed interface AppScreen {
     data object Search : AppScreen
 }
 
+/**
+ * Whether this screen should be presented as a "sheet" over the home tabs —
+ * sliding up from the bottom on enter (and down on exit) instead of the
+ * regular horizontal push/pop used for depth navigation within a stack.
+ */
+private fun AppScreen.isSheet(): Boolean =
+    this is AppScreen.Detail || this is AppScreen.Favorites || this is AppScreen.Search
+
 /** Navigation depth used to pick a transition direction in [MusicPlayerApp]. */
 private fun AppScreen.depth(): Int = when (this) {
     AppScreen.Tabs -> 0
@@ -331,14 +339,14 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
             AnimatedContent(
                 targetState = screen,
                 transitionSpec = {
-                    val homeToDetail = initialState is AppScreen.Tabs && targetState is AppScreen.Detail
-                    val detailToHome = initialState is AppScreen.Detail && targetState is AppScreen.Tabs
+                    val homeToSheet = initialState is AppScreen.Tabs && targetState.isSheet()
+                    val sheetToHome = initialState.isSheet() && targetState is AppScreen.Tabs
                     val targetDepth = targetState.depth()
                     val initialDepth = initialState.depth()
                     when {
-                        homeToDetail -> (slideUpEnter() togetherWith fadeOut(tween(MotionSpec.medium)))
+                        homeToSheet -> (slideUpEnter() togetherWith fadeOut(tween(MotionSpec.medium)))
                             .apply { targetContentZIndex = 1f }
-                        detailToHome -> (fadeIn(tween(MotionSpec.medium)) togetherWith slideDownExit())
+                        sheetToHome -> (fadeIn(tween(MotionSpec.medium)) togetherWith slideDownExit())
                             .apply { targetContentZIndex = 0f }
                         targetDepth > initialDepth -> forwardPush()
                         targetDepth < initialDepth -> reversePush()

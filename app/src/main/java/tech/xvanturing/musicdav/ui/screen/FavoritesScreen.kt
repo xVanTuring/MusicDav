@@ -1,8 +1,11 @@
 package tech.xvanturing.musicdav.ui.screen
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -14,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -65,10 +69,21 @@ fun FavoritesScreen(
 
     Scaffold(
         topBar = {
-            AppTopBar(
-                title = stringResource(R.string.common_favorites),
-                onBack = onBack
-            )
+            Box(
+                modifier = Modifier.pointerInput(Unit) {
+                    var dragY = 0f
+                    detectVerticalDragGestures(
+                        onDragEnd = { if (dragY > 120f) onBack(); dragY = 0f },
+                        onVerticalDrag = { change, amount -> dragY += amount; change.consume() }
+                    )
+                }
+            ) {
+                AppTopBar(
+                    title = stringResource(R.string.common_favorites),
+                    onBack = onBack,
+                    navigationIcon = Icons.Default.KeyboardArrowDown
+                )
+            }
         }
     ) { paddingValues ->
         Box(modifier = modifier.padding(paddingValues)) {
