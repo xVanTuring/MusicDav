@@ -68,6 +68,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -159,6 +160,8 @@ fun AlbumListScreen(
     isPlaying: Boolean = false,
     onPlayAlbum: (Album) -> Unit = {},
     onTogglePlayPause: () -> Unit = {},
+    carouselPage: Int = -1,
+    onCarouselPageChange: (Int) -> Unit = {},
 
 ) {
     val context = LocalContext.current
@@ -337,7 +340,9 @@ fun AlbumListScreen(
                             playingAlbumId = playingAlbumId,
                             isPlaying = isPlaying,
                             onPlayAlbum = onPlayAlbum,
-                            onTogglePlayPause = onTogglePlayPause
+                            onTogglePlayPause = onTogglePlayPause,
+                            carouselPage = carouselPage,
+                            onCarouselPageChange = onCarouselPageChange
                         )
                     }
                 }
@@ -966,7 +971,9 @@ private fun CarouselHomeContent(
     playingAlbumId: String? = null,
     isPlaying: Boolean = false,
     onPlayAlbum: (Album) -> Unit = {},
-    onTogglePlayPause: () -> Unit = {}
+    onTogglePlayPause: () -> Unit = {},
+    carouselPage: Int = -1,
+    onCarouselPageChange: (Int) -> Unit = {}
 ) {
     val coroutineScope = rememberCoroutineScope()
     val entries = remember(albums) {
@@ -978,7 +985,15 @@ private fun CarouselHomeContent(
         val mid = Int.MAX_VALUE / 2
         mid - (mid % entries.size)
     }
-    val pagerState = rememberPagerState(initialPage = startPage, pageCount = { Int.MAX_VALUE })
+    // Restore the page the user last had centered (hoisted to MusicPlayerApp so it survives
+    // this composable being torn down when navigating to/from the album detail screen).
+    val initialPage = if (carouselPage >= 0) carouselPage else startPage
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { Int.MAX_VALUE })
+
+    // Write the current page back up to the hoisted state as the user scrolls.
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { onCarouselPageChange(it) }
+    }
 
     // Rotation is driven globally (see VinylRotationClock) so it stays in sync with the
     // now-playing screen's big disc; only the disc matching playingAlbumId reads it (spin).
@@ -991,7 +1006,22 @@ private fun CarouselHomeContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(bottom = bottomInset),
+            .padding(bottom = bottomInset)
+            .pointerInput(entries) {
+                var dragY = 0f
+                detectVerticalDragGestures(
+                    onDragEnd = {
+                        if (dragY < -120f) {
+                            when (val e = entries[pagerState.currentPage % entries.size]) {
+                                is HomeEntry.Favorites -> onOpenFavorites()
+                                is HomeEntry.AlbumEntry -> onSelect(e.album)
+                            }
+                        }
+                        dragY = 0f
+                    },
+                    onVerticalDrag = { change, amount -> dragY += amount; change.consume() }
+                )
+            },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         HorizontalPager(
@@ -1049,21 +1079,6 @@ private fun CarouselHomeContent(
                             }
                         }
                     )
-                    .pointerInput(isCentered, entry) {
-                        var dragY = 0f
-                        detectVerticalDragGestures(
-                            onDragEnd = {
-                                if (isCentered && dragY < -120f) {
-                                    when (entry) {
-                                        is HomeEntry.Favorites -> onOpenFavorites()
-                                        is HomeEntry.AlbumEntry -> onSelect(entry.album)
-                                    }
-                                }
-                                dragY = 0f
-                            },
-                            onVerticalDrag = { change, amount -> dragY += amount; change.consume() }
-                        )
-                    }
 
                 when (entry) {
                     is HomeEntry.Favorites -> {

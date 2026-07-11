@@ -49,6 +49,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -202,6 +203,9 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     val playlistController = rememberPlaylistStateController()
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var tabFormOpen by remember { mutableStateOf(false) }
+    // 首页胶片轮播当前页号，提升到这里以免详情页显示时 Tabs 内容被销毁重建导致轮播复位。
+    // -1 = 未设置，交给 CarouselHomeContent 使用其默认起始页（Favorites 居中）。
+    var carouselPage by rememberSaveable { mutableIntStateOf(-1) }
 
     // 播放进度每 100ms 刷新一次 state，用 derivedStateOf 只在这两个派生值真正
     // 变化时才通知读者，避免全局旋转驱动跟着一起 100ms 重组一次。
@@ -427,7 +431,9 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                             modifier = Modifier.fillMaxSize(),
                             selectedTabIndex = selectedTabIndex,
                             onFormOpenChange = { tabFormOpen = it },
-                            bottomInset = homeBottomInset
+                            bottomInset = homeBottomInset,
+                            carouselPage = carouselPage,
+                            onCarouselPageChange = { carouselPage = it }
                         )
                     }
 
@@ -503,7 +509,9 @@ fun MainTabScreen(
     modifier: Modifier = Modifier,
     selectedTabIndex: Int,
     onFormOpenChange: (Boolean) -> Unit,
-    bottomInset: Dp
+    bottomInset: Dp,
+    carouselPage: Int = -1,
+    onCarouselPageChange: (Int) -> Unit = {}
 ) {
     var creatingAlbum by remember { mutableStateOf(false) }
     var creatingServerConfig by remember { mutableStateOf(false) }
@@ -655,7 +663,9 @@ fun MainTabScreen(
                                         } else {
                                             playlistController.play()
                                         }
-                                    }
+                                    },
+                                    carouselPage = carouselPage,
+                                    onCarouselPageChange = onCarouselPageChange
                                 )
                             }
 
