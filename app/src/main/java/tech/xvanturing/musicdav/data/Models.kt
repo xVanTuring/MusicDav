@@ -165,6 +165,11 @@ fun resolveAlbumUrl(storedValue: String?, baseServerUrl: String): String? {
 
 // Converts an absolute URL into a path relative to baseServerUrl, if it actually lives under it;
 // otherwise returns the URL unchanged (kept absolute, e.g. cover picked from a different host).
+// The result is relative to baseServerUrl's own path (e.g. base "https://host/dav" + target
+// "https://host/dav/Music/Album1" -> "/Music/Album1"), NOT the domain root — resolveAlbumUrl()
+// re-joins it onto baseServerUrl, and baseServerUrl already carries any WebDAV root sub-path
+// (e.g. Nextcloud's "/remote.php/dav/files/user"), so stripping it here avoids a duplicated
+// path segment on reconstruction.
 fun relativizeAlbumUrl(absoluteUrl: String?, baseServerUrl: String): String? {
     if (absoluteUrl == null) return null
     if (!absoluteUrl.startsWith("http://") && !absoluteUrl.startsWith("https://")) return absoluteUrl
@@ -172,7 +177,15 @@ fun relativizeAlbumUrl(absoluteUrl: String?, baseServerUrl: String): String? {
         val base = java.net.URL(baseServerUrl.trimEnd('/'))
         val target = java.net.URL(absoluteUrl)
         val sameHost = base.host.equals(target.host, ignoreCase = true) && base.port == target.port
-        if (sameHost) target.path.ifEmpty { "/" } else absoluteUrl
+        if (!sameHost) return absoluteUrl
+        val basePath = base.path.trimEnd('/')
+        val targetPath = target.path
+        val relativePath = if (basePath.isNotEmpty() && targetPath.startsWith(basePath)) {
+            targetPath.substring(basePath.length)
+        } else {
+            targetPath
+        }
+        relativePath.ifEmpty { "/" }
     } catch (e: Exception) {
         absoluteUrl
     }
