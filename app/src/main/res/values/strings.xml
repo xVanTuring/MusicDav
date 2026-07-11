@@ -77,6 +77,8 @@
     <string name="home_view_carousel">切换到唱片视图</string>
     <string name="home_menu_desc">更多</string>
     <string name="home_cover_default_desc">默认专辑封面</string>
+    <string name="home_menu_title">菜单</string>
+    <string name="settings_show_covers">显示列表封面</string>
 
     <!-- ie_* : AlbumListScreen import/export menu and dialogs -->
     <string name="ie_title">导入/导出</string>

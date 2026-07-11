@@ -334,9 +334,30 @@ fun AlbumListScreen(
                 if (showMenuDialog) {
                     AlertDialog(
                         onDismissRequest = { showMenuDialog = false },
-                        title = { Text(stringResource(R.string.ie_title)) },
+                        title = { Text(stringResource(R.string.home_menu_title)) },
                         text = {
                             Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.settings_show_covers),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    androidx.compose.material3.Switch(
+                                        checked = tech.xvanturing.musicdav.data.UiSettings.showListCovers,
+                                        onCheckedChange = {
+                                            tech.xvanturing.musicdav.data.UiSettings.setShowListCovers(
+                                                context,
+                                                it
+                                            )
+                                        }
+                                    )
+                                }
+                                androidx.compose.material3.HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 12.dp)
+                                )
                                 Button(
                                     onClick = {
                                         showMenuDialog = false

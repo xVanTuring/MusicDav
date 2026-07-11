@@ -66,6 +66,8 @@
     <string name="home_view_carousel">Switch to carousel view</string>
     <string name="home_menu_desc">More</string>
     <string name="home_cover_default_desc">Default album cover</string>
+    <string name="home_menu_title">Menu</string>
+    <string name="settings_show_covers">Show list covers</string>
 
     <!-- ie_* : AlbumListScreen import/export menu and dialogs -->
     <string name="ie_title">Import / Export</string>

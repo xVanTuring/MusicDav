@@ -281,62 +281,64 @@ fun MusicListItem(
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(modifier = Modifier.size(ItemCoverSize)) {
-                if (coverUrl != null && context != null) {
-                    if (cachedCoverUrl != null) {
-                        AsyncImage(
-                            model = coverUrl,
-                            contentDescription = musicFile.displayName,
-                            modifier = Modifier
-                                .size(ItemCoverSize)
-                                .clip(MaterialTheme.shapes.small),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                        )
+            if (tech.xvanturing.musicdav.data.UiSettings.showListCovers) {
+                Box(modifier = Modifier.size(ItemCoverSize)) {
+                    if (coverUrl != null && context != null) {
+                        if (cachedCoverUrl != null) {
+                            AsyncImage(
+                                model = coverUrl,
+                                contentDescription = musicFile.displayName,
+                                modifier = Modifier
+                                    .size(ItemCoverSize)
+                                    .clip(MaterialTheme.shapes.small),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        } else {
+                            AsyncImage(
+                                model = remoteCoverRequest,
+                                contentDescription = musicFile.displayName,
+                                modifier = Modifier
+                                    .size(ItemCoverSize)
+                                    .clip(MaterialTheme.shapes.small),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        }
                     } else {
-                        AsyncImage(
-                            model = remoteCoverRequest,
-                            contentDescription = musicFile.displayName,
+                        Box(
                             modifier = Modifier
                                 .size(ItemCoverSize)
-                                .clip(MaterialTheme.shapes.small),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                        )
+                                .clip(MaterialTheme.shapes.small)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = null,
+                                tint = if (isPlaying) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
                     }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(ItemCoverSize)
-                            .clip(MaterialTheme.shapes.small)
-                            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            tint = if (isPlaying) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
+
+                    // "Now playing" equalizer indicator, overlaid on the leading edge of the cover.
+                    if (isPlaying) {
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clip(MaterialTheme.shapes.small)
+                                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.35f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            PlayingEqualizer()
+                        }
                     }
                 }
 
-                // "Now playing" equalizer indicator, overlaid on the leading edge of the cover.
-                if (isPlaying) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clip(MaterialTheme.shapes.small)
-                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.35f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        PlayingEqualizer()
-                    }
-                }
+                Spacer(modifier = Modifier.width(16.dp))
             }
-
-            Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(

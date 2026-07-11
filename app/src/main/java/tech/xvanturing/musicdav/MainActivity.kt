@@ -1,5 +1,6 @@
 package tech.xvanturing.musicdav
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -7,6 +8,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -40,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
 import tech.xvanturing.musicdav.player.rememberNotificationPermissionState
 import tech.xvanturing.musicdav.player.rememberPlaylistStateController
 import tech.xvanturing.musicdav.ui.BottomPlayerBar
@@ -56,6 +61,7 @@ import tech.xvanturing.musicdav.ui.theme.MotionSpec
 import tech.xvanturing.musicdav.ui.theme.MusicDavTheme
 import tech.xvanturing.musicdav.ui.theme.VinylEasingDecelerate
 import tech.xvanturing.musicdav.ui.theme.VinylEasingStandard
+import tech.xvanturing.musicdav.ui.theme.blockPointerInput
 import tech.xvanturing.musicdav.ui.theme.fadeThrough
 import tech.xvanturing.musicdav.ui.theme.forwardPush
 import tech.xvanturing.musicdav.ui.theme.slideDownExit
@@ -86,20 +92,31 @@ private fun AppScreen.depth(): Int = when (this) {
 }
 
 /**
+ * Small fixed slide distance (in px), mirroring [tech.xvanturing.musicdav.ui.theme.forwardPush]'s
+ * `SharedAxisSlidePx` — see that constant for rationale (shared-axis style,
+ * forgiving of dropped frames on high-refresh-rate displays).
+ */
+private const val ReverseSharedAxisSlidePx = 90
+
+/**
  * Mirror of [forwardPush] but sliding the opposite direction (new screen
  * enters from the left, old screen exits to the right) — used when
  * navigating back up the hierarchy so the animation reads as "going back".
  */
 private fun reversePush(): ContentTransform {
+    val spatialSpring = spring<IntOffset>(
+        dampingRatio = 1f,
+        stiffness = Spring.StiffnessMedium
+    )
     val enter = slideInHorizontally(
-        animationSpec = tween(MotionSpec.medium, easing = VinylEasingDecelerate)
-    ) { fullWidth -> -fullWidth } + fadeIn(
-        animationSpec = tween(MotionSpec.medium, easing = VinylEasingStandard)
+        animationSpec = spatialSpring
+    ) { -ReverseSharedAxisSlidePx } + fadeIn(
+        animationSpec = tween(200)
     )
     val exit = slideOutHorizontally(
-        animationSpec = tween(MotionSpec.medium, easing = VinylEasingStandard)
-    ) { fullWidth -> fullWidth } + fadeOut(
-        animationSpec = tween(MotionSpec.fast, easing = VinylEasingStandard)
+        animationSpec = spatialSpring
+    ) { ReverseSharedAxisSlidePx } + fadeOut(
+        animationSpec = tween(120)
     )
     return enter togetherWith exit
 }
@@ -109,11 +126,46 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestHighestRefreshRate()
+        tech.xvanturing.musicdav.data.UiSettings.init(this)
 
 
         setContent {
             MusicDavTheme {
                 MusicPlayerApp(modifier = Modifier.fillMaxSize())
+            }
+        }
+    }
+
+    /**
+     * Requests the display's highest available refresh rate at the current
+     * physical resolution (e.g. 120Hz instead of an OEM-capped 90Hz), so
+     * animations don't look janky on high-refresh-rate devices. Many OEM
+     * refresh-rate policies only unlock the panel's max refresh rate when an
+     * app explicitly asks for it via [android.view.WindowManager.LayoutParams.preferredDisplayModeId].
+     */
+    private fun requestHighestRefreshRate() {
+        val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display
+        } else {
+            @Suppress("DEPRECATION") windowManager.defaultDisplay
+        } ?: return
+
+        val current = display.mode
+        val supported = display.supportedModes
+        // Prefer a mode with the SAME physical resolution as the current one, highest refresh rate,
+        // so we don't trigger a resolution switch — only a refresh-rate bump.
+        val best = supported
+            .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+            .maxByOrNull { it.refreshRate }
+            ?: supported.maxByOrNull { it.refreshRate }
+            ?: return
+
+        if (best.refreshRate > current.refreshRate + 0.1f) {
+            window.attributes = window.attributes.apply {
+                preferredDisplayModeId = best.modeId
+                // Also set the softer hint in case the OEM honors this but not the mode id:
+                preferredRefreshRate = best.refreshRate
             }
         }
     }
@@ -180,7 +232,12 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
             },
             label = "rootNav"
         ) { target ->
-            when (target) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (transition.targetState == EnterExitState.PostExit) Modifier.blockPointerInput() else Modifier)
+            ) {
+                when (target) {
                 is AppScreen.Edit -> {
                     // Show edit form
                     AlbumCreateForm(
@@ -269,6 +326,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                         playlistController = playlistController,
                         modifier = Modifier.fillMaxSize()
                     )
+                }
                 }
             }
         }
@@ -366,6 +424,11 @@ fun MainTabScreen(
         label = "tabRoute",
         modifier = modifier
     ) { route ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (transition.targetState == EnterExitState.PostExit) Modifier.blockPointerInput() else Modifier)
+        ) {
         when (route) {
             TabRoute.CreateAlbum -> {
                 AlbumCreateForm(
@@ -490,6 +553,11 @@ fun MainTabScreen(
                             transitionSpec = { fadeThrough() },
                             label = "tabNav"
                         ) { tab ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .then(if (transition.targetState == EnterExitState.PostExit) Modifier.blockPointerInput() else Modifier)
+                            ) {
                             when (tab) {
                                 0 -> {
                                     AlbumListScreen(
@@ -523,10 +591,12 @@ fun MainTabScreen(
                                     )
                                 }
                             }
+                            }
                         }
                     }
                 }
             }
+        }
         }
     }
 }
