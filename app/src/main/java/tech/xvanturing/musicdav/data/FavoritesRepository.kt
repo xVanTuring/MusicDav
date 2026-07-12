@@ -1,6 +1,8 @@
 package tech.xvanturing.musicdav.data
 
 import androidx.core.content.edit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import tech.xvanturing.musicdav.player.CoverCache
@@ -147,6 +149,45 @@ fun favoritesCoverPath(context: android.content.Context, favorites: List<Favorit
         CoverCache.getCoverPath(context, favorite.musicFile.cacheKey)?.let { return it }
     }
     return null
+}
+
+// 收藏夹封面的内存缓存：跨屏幕(专辑列表被销毁重建)保留上次解析出的封面路径，返回列表页时能立刻
+// 显示、无需闪一下占位图。signature 用收藏项 id 拼成，收藏集合变化时自动失效。isResolved 用于
+// 区分"还没解析过"和"已解析但确实没有封面"，避免对没有内嵌封面的收藏每次返回都重复联网提取。
+object FavoritesCoverCache {
+    @Volatile private var signature: String? = null
+    @Volatile private var path: String? = null
+
+    fun current(): String? = path
+    fun isResolved(sig: String): Boolean = sig == signature
+    fun get(sig: String): String? = if (sig == signature) path else null
+    fun put(sig: String, coverPath: String?) {
+        signature = sig
+        path = coverPath
+    }
+}
+
+// 稳定解析收藏夹封面（#3 修"封面要来回切换很多次才显示"）：
+// 1) 先看本地已缓存封面(favoritesCoverPath)，命中即返回——无网络、最快。
+// 2) 本地没有时，依次对前若干首收藏歌曲做一次内嵌封面提取（会联网），第一首取到封面就写入
+//    CoverCache 并返回其路径。这样即使用户从没进过对应专辑详情，收藏封面也能自己冒出来。
+// 3) 都取不到则返回 null（继续用占位图）。
+// 注意：写入 CoverCache 用 favorite.musicFile.cacheKey，与 favoritesCoverPath 的读取键一致。
+suspend fun resolveFavoritesCover(
+    context: android.content.Context,
+    favorites: List<FavoriteSong>
+): String? = withContext(Dispatchers.IO) {
+    favoritesCoverPath(context, favorites)?.let { return@withContext it }
+    for (favorite in favorites.take(5)) {
+        val key = favorite.musicFile.cacheKey
+        CoverCache.getCoverPath(context, key)?.let { return@withContext it }
+        val playable = favorite.resolvePlayable(context) ?: continue
+        val art = runCatching { extractMusicMetadata(context, playable.first, playable.second).coverArt }
+            .getOrNull() ?: continue
+        val saved = CoverCache.saveCover(context, key, art.imageData, art.mimeType)
+        if (saved != null) return@withContext saved
+    }
+    null
 }
 
 // Resolves a favorite into a currently-playable MusicFile + WebDavConfig, re-resolving the
