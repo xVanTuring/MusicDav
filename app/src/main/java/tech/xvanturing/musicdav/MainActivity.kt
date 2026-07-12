@@ -10,6 +10,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -22,13 +23,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.AnchoredDraggableDefaults
-import androidx.compose.foundation.gestures.AnchoredDraggableState
-import androidx.compose.foundation.gestures.DraggableAnchors
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.anchoredDraggable
-import androidx.compose.foundation.gestures.animateTo
-import androidx.compose.foundation.gestures.snapTo
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -52,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -59,7 +54,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -119,8 +113,9 @@ private sealed interface AppScreen {
  * regular horizontal push/pop used for depth navigation within a stack.
  *
  * Album detail is no longer part of [AppScreen] — it is rendered as its own
- * finger-following drag sheet (see [SheetAnchor] / [MusicPlayerApp]) layered
- * above this root router instead of going through [AnimatedContent].
+ * finger-following drag sheet driven by a single sheetProgress value (see
+ * [MusicPlayerApp]) layered above this root router instead of going through
+ * [AnimatedContent].
  */
 private fun AppScreen.isSheet(): Boolean =
     this is AppScreen.Favorites || this is AppScreen.Search
@@ -134,103 +129,24 @@ private fun AppScreen.depth(): Int = when (this) {
 }
 
 /**
- * Anchor values for the album detail drag sheet's [AnchoredDraggableState].
- * [Closed] positions the sheet fully below the visible content area (offset
- * == content height, in px); [Open] positions it at offset 0.
+ * 专辑详情 sheet 的开合，全部由**唯一一个进度值** `sheetProgress` ∈ [0,1] 驱动
+ * （见 [MusicPlayerApp]）：0 = 完全关闭（列表藏在底栏下方），1 = 完全打开（铺满整屏）。
+ * sheet 位移、导航栏收起、是否挂载 都只**读**这个值推算；改它只有两条路：程序动画
+ * （点击打开 / 返回关闭 / 松手吸附）与手指拖拽（轮播上拉 / 详情列表下拉），且任何拖拽都会
+ * 取消正在跑的动画，保证同一时刻只有一个驱动者——彻底原子，不再有多输入抢一个 offset 的竞态。
  */
-private enum class SheetAnchor { Closed, Open }
 
-/** Spring used for both programmatic (click-to-open / back-arrow-to-close) and
- * fling-settle sheet animations — critically damped so it never overshoots. */
+/** 程序动画（点击打开 / 返回关闭 / 松手吸附）用的弹簧：临界阻尼、不回弹。 */
 private val SheetAnimationSpec = spring<Float>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = Spring.StiffnessMedium
 )
 
-/** Fling velocity (px/s) above which a release settles by direction alone,
- * ignoring how far past the 40% positional threshold the drag got. */
+/** 松手速度（px/s）超过它就只按方向吸附，忽略当前进度是否过阈值。 */
 private const val SheetVelocityThreshold = 1000f
 
-/** Positional threshold (fraction of the Closed<->Open distance) past which a
- * released drag with sub-threshold velocity snaps to Closed instead of Open. */
+/** 松手速度不够时，按进度是否过这个比例决定吸附到打开(1)还是关闭(0)。 */
 private const val SheetPositionalThreshold = 0.4f
-
-/**
- * Decide whether a released drag on the album detail sheet should settle to
- * [SheetAnchor.Open] or [SheetAnchor.Closed], considering both how far the
- * offset has travelled from Closed towards Open (>[SheetPositionalThreshold]
- * of the total distance commits to Open) and the release velocity (a fast
- * enough fling wins regardless of position).
- */
-private suspend fun AnchoredDraggableState<SheetAnchor>.settleSheet(velocity: Float) {
-    val openOffset = anchors.positionOf(SheetAnchor.Open)
-    val closedOffset = anchors.positionOf(SheetAnchor.Closed)
-    if (openOffset.isNaN() || closedOffset.isNaN() || openOffset == closedOffset) return
-    val currentOffset = if (offset.isNaN()) closedOffset else offset
-    // 0f = 完全 Closed，1f = 完全 Open。
-    val openedProgress =
-        ((closedOffset - currentOffset) / (closedOffset - openOffset)).coerceIn(0f, 1f)
-    val target = when {
-        velocity <= -SheetVelocityThreshold -> SheetAnchor.Open
-        velocity >= SheetVelocityThreshold -> SheetAnchor.Closed
-        openedProgress > SheetPositionalThreshold -> SheetAnchor.Open
-        else -> SheetAnchor.Closed
-    }
-    animateTo(target, SheetAnimationSpec)
-}
-
-/**
- * Standard "pull to dismiss a bottom sheet whose content is scrollable"
- * nested scroll wiring, mirroring androidx.compose.material3's internal
- * ConsumeSwipeWithinBottomSheetBoundsNestedScrollConnection (not public, so
- * reimplemented here against the public foundation.gestures API): upward
- * drags are offered to the sheet first (pre-scroll, so it can finish closing
- * the gap to fully Open before the list itself scrolls); downward drags are
- * only handed to the sheet once the list has nothing left to consume
- * (post-scroll, i.e. the list is already at its top). Flings are settled via
- * [settleSheet] on both pre- and post-fling so a released drag always snaps.
- */
-private class SheetNestedScrollConnection(
-    private val sheetState: AnchoredDraggableState<SheetAnchor>,
-) : NestedScrollConnection {
-    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-        val delta = available.y
-        return if (delta < 0 && source == NestedScrollSource.UserInput) {
-            Offset(0f, sheetState.dispatchRawDelta(delta))
-        } else {
-            Offset.Zero
-        }
-    }
-
-    override fun onPostScroll(
-        consumed: Offset,
-        available: Offset,
-        source: NestedScrollSource,
-    ): Offset {
-        return if (source == NestedScrollSource.UserInput) {
-            Offset(0f, sheetState.dispatchRawDelta(available.y))
-        } else {
-            Offset.Zero
-        }
-    }
-
-    override suspend fun onPreFling(available: Velocity): Velocity {
-        val toFling = available.y
-        val currentOffset = sheetState.requireOffset()
-        val minAnchor = sheetState.anchors.minPosition()
-        return if (toFling < 0 && currentOffset > minAnchor) {
-            sheetState.settleSheet(toFling)
-            available
-        } else {
-            Velocity.Zero
-        }
-    }
-
-    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-        sheetState.settleSheet(available.y)
-        return available
-    }
-}
 
 /**
  * Small fixed slide distance (in px), mirroring [tech.xvanturing.musicdav.ui.theme.forwardPush]'s
@@ -368,73 +284,116 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
         else -> AppScreen.Tabs
     }
 
-    // 专辑详情不再是 AnimatedContent 里的一个 AppScreen 分支，而是叠在根内容之上的
-    // 手指跟随 drag sheet：selectedAlbum 只驱动这个 sheet 的显隐，sheetState 驱动它的
-    // 开合动画/手势（见下方 Scaffold content 里的渲染，以及 CarouselHomeContent 的
-    // onSheetDragStart/onSheetDrag/onSheetDragEnd 三个回调）。
+    // 专辑详情不再是 AnimatedContent 里的一个 AppScreen 分支，而是叠在根内容之上的手指跟随 sheet。
+    // 唯一真相源：开合进度 sheetProgress ∈ [0,1]，0=完全关闭、1=完全打开（见文件顶部 SheetAnimationSpec
+    // 附近的说明）。selectedAlbum 负责挂载/卸载 sheet 内容；sheetProgress 负责它的位置与导航栏收起。
     val scope = rememberCoroutineScope()
-    val sheetState = remember { AnchoredDraggableState(initialValue = SheetAnchor.Closed) }
-    // 点击(网格/非居中碟)打开详情时，先同步置 false 以在打开动画期间摘掉 sheet 的拖拽/嵌套滚动
-    // 手势，避免真机上「按下→微移→抬起」这段还没结束的触摸被刚组合出来的 anchoredDraggable 当作
-    // 拖拽接管，打断打开动画并按≈0 位移回弹(#2.5 真机 bug)。动画结束(finally)后恢复为 true。
-    // 轮播上拉打开走的是手指跟随路径，全程保持 true。
-    var sheetDragEnabled by remember { mutableStateOf(true) }
-    val sheetNestedScrollConnection = remember(sheetState) { SheetNestedScrollConnection(sheetState) }
-    val sheetFlingBehavior = AnchoredDraggableDefaults.flingBehavior(
-        state = sheetState,
-        positionalThreshold = { distance -> distance * SheetPositionalThreshold },
-        animationSpec = SheetAnimationSpec
-    )
-    // Sheet 真正落到 Closed 后清空 selectedAlbum（sheet 内容随之被移出组合）。这里必须**同时**要求
-    // settledValue 与 targetValue 都是 Closed：settledValue 只在动画完成的一刻才翻，而 targetValue 是
-    // 当前的意图/去向。打开过程中 targetValue==Open，即使某一帧 settledValue 读到 Closed 也不会卸载，
-    // 保证挂载(selectedAlbum) / 位置(sheetState) / 导航栏收起三者原子一致，绝不会中途把列表卸掉。
-    LaunchedEffect(sheetState) {
-        snapshotFlow {
-            sheetState.settledValue == SheetAnchor.Closed && sheetState.targetValue == SheetAnchor.Closed
-        }.collect { fullyClosed ->
-            if (fullyClosed) selectedAlbum = null
-        }
-    }
 
-    // 详情 sheet 所在内容区的高度（px，即 sheetState 的 Closed 锚点偏移量），由下方内容 Box
-    // 的 onSizeChanged 写入；常驻底栏（播放条+导航栏）整体高度（px），由 bottomBar 自己的
-    // onSizeChanged 写入，用 maxOf 保留最大值以免动画中途变小导致底栏跟手比例跳变。
+    // 内容区高度（px，也是 sheet 完全关闭时需要下移藏起的行程基准）与常驻底栏（播放条+导航栏）整体
+    // 高度（px）。底栏高度用 maxOf 保留展开时的完整值，免得导航栏收起动画中途变矮把行程算歪。
     var contentAreaHeightPx by remember { mutableIntStateOf(0) }
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
 
-    // Sheet 的 Closed 锚点偏移 = 内容区高度 - 底部栏高度，即收起时 sheet 顶边正好贴着底部栏
-    // （播放条+导航栏）顶部，被其挡住而不可见；上拉行程也因此缩短一个底部栏高度。任一高度
-    // 变化都要重新计算锚点，避免底部栏高度晚于内容区测量到时 Closed 偏移仍停留在旧值。
-    LaunchedEffect(contentAreaHeightPx, bottomBarHeightPx) {
-        if (contentAreaHeightPx > 0) {
-            sheetState.updateAnchors(
-                DraggableAnchors {
-                    SheetAnchor.Closed at (contentAreaHeightPx - bottomBarHeightPx).coerceAtLeast(0).toFloat()
-                    SheetAnchor.Open at 0f
-                }
-            )
+    var sheetProgress by remember { mutableFloatStateOf(0f) }
+    var sheetAnimJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+    // sheet 从完全关闭到完全打开需要移动的距离（px）：关闭时 sheet 顶边正好贴在底栏顶部（被挡住），
+    // 打开时到屏顶。sheetProgress=0 → 位移 = 这段行程；=1 → 位移 0。
+    val sheetTravelPx: () -> Float =
+        { (contentAreaHeightPx - bottomBarHeightPx).coerceAtLeast(0).toFloat() }
+
+    // ① 程序动画到某进度。到 0（完全关闭）时把 selectedAlbum 卸载——挂载/卸载与进度落定原子绑定：
+    // 只有关闭动画“真正跑完”这一行才执行，被拖拽取消则抛 CancellationException、这行不会跑，绝不会
+    // 在动画途中把列表卸掉。
+    fun animateSheetTo(target: Float) {
+        sheetAnimJob?.cancel()
+        sheetAnimJob = scope.launch {
+            animate(
+                initialValue = sheetProgress,
+                targetValue = target,
+                animationSpec = SheetAnimationSpec
+            ) { value, _ -> sheetProgress = value }
+            if (target <= 0f) selectedAlbum = null
         }
     }
 
-    // 导航栏收起比例的实时读取器：0 = 完全展开，1 = 完全收起。用来让 3-tab 导航栏随 sheet 上抬
-    // 而收起（布局高度按 1-fraction 收缩 + 淡出），而播放条不加位移、始终常驻可见。以 lambda 形式
-    // 提供，好让读者（导航栏的 layout/graphicsLayer 块）在 sheetState.offset 每帧变化时被直接触发
-    // 重算，实现跟手同步，而不是依赖外层重组。
-    //
-    // 关键：收起行程用**一个底栏高度**(bottomBarHeightPx)，而不是 sheet 的整段行程(closed，≈整屏)。
-    // 因为 sheet 一从 Closed 上抬就会盖住底栏所在的那块区域；若按整段行程线性收起，等 sheet 已经抬
-    // 上来一大截，导航栏才收起了一点点，就会大面积残留、盖在列表上——黑胶模式慢速上拉时看到的
-    // "底部 tab 恢复/残留一半"。按底栏高度收起，可让导航栏在上拉之初就迅速让位、抬过底栏即完全收起。
-    // sheetState.offset 在锚点未初始化前是 NaN，此时按未收起（0f）处理，避免调用 requireOffset() 抛异常。
+    // ② 手指拖拽：把「上抬的像素」换算成进度增量直接赋值（上抬为正 = 更打开）。先取消动画，确保
+    // 拖拽期间只有手指在驱动这个值，没有第二个驱动者。
+    fun dragSheetByRisePx(risePx: Float) {
+        sheetAnimJob?.cancel()
+        sheetAnimJob = null
+        val travel = sheetTravelPx()
+        if (travel <= 0f) return
+        sheetProgress = (sheetProgress + risePx / travel).coerceIn(0f, 1f)
+    }
+
+    // 松手吸附：速度够大只看方向，否则看进度是否过阈值，动画到打开(1)或关闭(0)。velocity 为 px/s，
+    // 向上为负。
+    fun settleSheet(velocityPxPerSec: Float) {
+        val target = when {
+            velocityPxPerSec <= -SheetVelocityThreshold -> 1f
+            velocityPxPerSec >= SheetVelocityThreshold -> 0f
+            sheetProgress > SheetPositionalThreshold -> 1f
+            else -> 0f
+        }
+        animateSheetTo(target)
+    }
+
+    // 详情列表的嵌套滚动：列表未到顶时上滑先喂给 sheet 继续打开；到顶后下滑的剩余量喂给 sheet 收起；
+    // 松手（fling）交给 settleSheet 吸附。全部通过上面同一套函数改 sheetProgress，与拖拽/动画同源。
+    val sheetNestedScroll = remember {
+        object : NestedScrollConnection {
+            private fun consumeToSheet(dy: Float): Float {
+                val travel = sheetTravelPx()
+                if (travel <= 0f) return 0f
+                val before = sheetProgress
+                dragSheetByRisePx(-dy)   // 上滑 dy<0 → rise>0 打开；下滑 dy>0 → rise<0 收起
+                return -(sheetProgress - before) * travel   // 换回滚动坐标（向下为正）的已消费像素
+            }
+
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val dy = available.y
+                return if (dy < 0 && source == NestedScrollSource.UserInput && sheetProgress < 1f) {
+                    Offset(0f, consumeToSheet(dy))
+                } else Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                val dy = available.y
+                return if (dy > 0 && source == NestedScrollSource.UserInput) {
+                    Offset(0f, consumeToSheet(dy))
+                } else Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                return if (available.y < 0 && sheetProgress < 1f) {
+                    settleSheet(available.y); available
+                } else Velocity.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                settleSheet(available.y)
+                return available
+            }
+        }
+    }
+
+    // 导航栏收起比例的实时读取器：0 = 完全展开，1 = 完全收起。以 lambda 形式提供，供导航栏的
+    // layout/graphicsLayer 块在 sheetProgress 每帧变化时被直接触发重算、跟手同步。
+    // 收起行程只用**一个底栏高度**：sheet 一上抬就盖住底栏那块区域，抬过一个底栏高度即完全收起，
+    // 让导航栏一开始上拉就迅速让位，不会大面积残留盖在列表上（"tab 残留一半"）。
+    // 没有 sheet 挂载（selectedAlbum==null）时强制返回 0（导航栏完整显示）——把"导航栏收起"与
+    // "有没有 sheet"绑成原子的一件事，杜绝 sheet 关掉后导航栏还卡在收起态。
     val navBarCollapseFraction: () -> Float = {
-        val currentOffset = sheetState.offset
-        val closed = (contentAreaHeightPx - bottomBarHeightPx).coerceAtLeast(0).toFloat()
-        if (bottomBarHeightPx <= 0 || closed <= 0f || currentOffset.isNaN()) {
+        if (selectedAlbum == null || bottomBarHeightPx <= 0) {
             0f
         } else {
-            // (closed - currentOffset) = sheet 从 Closed 上抬的距离；抬过一个底栏高度即完全收起。
-            ((closed - currentOffset) / bottomBarHeightPx).coerceIn(0f, 1f)
+            val risenPx = sheetProgress * sheetTravelPx()   // sheet 已从关闭位置上抬的像素
+            (risenPx / bottomBarHeightPx).coerceIn(0f, 1f)
         }
     }
 
@@ -510,7 +469,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                                 // 它在 Column 里位于播放条下方、Column 底部锚定，收缩其布局高度会让上方
                                 // 播放条自然下沉到屏底并保持可见（播放条本身不加位移）。clipToBounds 裁掉
                                 // 收缩后溢出的部分。fraction 在 layout/graphicsLayer 块里实时读取，随
-                                // sheetState.offset 每帧变化重算，实现跟手同步。
+                                // sheetProgress 每帧变化重算，实现跟手同步。
                                 .graphicsLayer { alpha = (1f - navBarCollapseFraction()).coerceIn(0f, 1f) }
                                 .clipToBounds()
                                 .layout { measurable, constraints ->
@@ -651,22 +610,9 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                                 albums = tech.xvanturing.musicdav.data.AlbumsRepository.load(context)
                             },
                             onSelectAlbum = { album ->
-                                // 网格点击 / 非居中碟点击：挂载 sheet 内容并直接 animateTo(Open)。
-                                // 关键：**不做 snapTo(Closed)**。sheet 关闭后 selectedAlbum 才会被清空，
-                                // 此时 sheetState 已停在 Closed，直接从 Closed 动到 Open 即可；多余的
-                                // snapTo(Closed) 会把 settledValue 瞬时打回 Closed，被下面"落到 Closed 就
-                                // 卸载"的收集器误判成关闭 → 中途清掉 selectedAlbum（列表消失）而 offset 还在
-                                // 往 Open animate（底栏还在动），正是"底栏上下闪、看不到列表、最后卡成塌陷"。
-                                // 打开动画期间禁用 sheet 手势（sheetDragEnabled），动画结束(finally)恢复。
-                                sheetDragEnabled = false
+                                // 网格点击 / 非居中碟点击：挂载 sheet 内容并动画到完全打开。
                                 selectedAlbum = album
-                                scope.launch {
-                                    try {
-                                        sheetState.animateTo(SheetAnchor.Open, SheetAnimationSpec)
-                                    } finally {
-                                        sheetDragEnabled = true
-                                    }
-                                }
+                                animateSheetTo(1f)
                             },
                             onCreateAlbum = { album, serverConfigId ->
                                 val updated = albums + album
@@ -689,41 +635,28 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                             carouselPage = carouselPage,
                             onCarouselPageChange = { carouselPage = it },
                             onSheetDragStart = { album ->
-                                // 轮播上拖：sheet 从 Closed 起点开始，随后每帧由 onSheetDrag 手指跟随。
+                                // 轮播上拖：挂载 sheet，随后每帧由 onSheetDrag 手指跟随驱动 sheetProgress。
                                 selectedAlbum = album
                             },
-                            onSheetDrag = { dy -> sheetState.dispatchRawDelta(dy) },
-                            onSheetDragEnd = { velocity ->
-                                scope.launch { sheetState.settleSheet(velocity) }
-                            }
+                            // dy 为每帧竖直位移（向上为负）；向上 = 上抬 = 更打开，故取 -dy 作上抬像素。
+                            onSheetDrag = { dy -> dragSheetByRisePx(-dy) },
+                            onSheetDragEnd = { velocity -> settleSheet(velocity) }
                         )
                     }
                     }
                 }
             }
 
-            // 专辑详情：偏移量驱动的手指跟随 sheet，叠在 AnimatedContent 之上、NowPlaying 之下。
-            // selectedAlbum 只负责挂载/卸载这块内容；sheetState 驱动它的位置/开合手势。
+            // 专辑详情：手指跟随 sheet，叠在 AnimatedContent 之上、NowPlaying 之下。selectedAlbum
+            // 负责挂载/卸载这块内容；sheetProgress 驱动它的竖直位置（位移 = (1-progress)*行程）。
+            // 位移写在 offset{} 延迟 lambda 里，sheetProgress 变化只重新放置、不重组本函数。
             val sheetAlbum = selectedAlbum
             if (sheetAlbum != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .offset { IntOffset(0, sheetState.requireOffset().roundToInt()) }
-                        // 点击打开动画期间摘掉拖拽/嵌套滚动，避免真机触摸竞态回弹（#2.5）；动画结束
-                        // 后恢复。轮播上拉打开走手指跟随路径，sheetDragEnabled 全程为 true 不受影响。
-                        .then(if (sheetDragEnabled) Modifier.nestedScroll(sheetNestedScrollConnection) else Modifier)
-                        .then(
-                            if (sheetDragEnabled) {
-                                Modifier.anchoredDraggable(
-                                    state = sheetState,
-                                    orientation = Orientation.Vertical,
-                                    flingBehavior = sheetFlingBehavior
-                                )
-                            } else {
-                                Modifier
-                            }
-                        )
+                        .offset { IntOffset(0, ((1f - sheetProgress) * sheetTravelPx()).roundToInt()) }
+                        .nestedScroll(sheetNestedScroll)
                 ) {
                     // AlbumDetailScreen 内部 currentAlbumSongs/hasTriedInitialRefresh 等状态是
                     // 无 key 的 remember；sheet 在同一组合位置切换不同专辑时若不加 key，会复用
@@ -733,7 +666,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                     androidx.compose.runtime.key(sheetAlbum.id) {
                         AlbumDetailScreen(
                             album = sheetAlbum,
-                            onBack = { scope.launch { sheetState.animateTo(SheetAnchor.Closed, SheetAnimationSpec) } },
+                            onBack = { animateSheetTo(0f) },
                             onEdit = { album -> editingAlbum = album },
                             playlistController = playlistController,
                             modifier = Modifier.fillMaxSize(),

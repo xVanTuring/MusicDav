@@ -1188,6 +1188,7 @@ private fun CarouselHomeContent(
                             headers = headers,
                             contentDescription = album.name,
                             spin = playingAlbumId != null && album.id == playingAlbumId,
+                            spinAlbumId = album.id,
                             modifier = recordModifier
                         )
                     }
@@ -1269,7 +1270,10 @@ private fun VinylRecord(
     placeholderTint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     placeholderBackground: Color = MaterialTheme.colorScheme.surfaceVariant,
     // 收藏碟额外显示的爱心标识：即使有封面也贴一个红心角标，表明这是"收藏"。
-    showFavoriteBadge: Boolean = false
+    showFavoriteBadge: Boolean = false,
+    // 这张碟代表的专辑 id：用于和全局旋转时钟的 albumId 比对，只有确认「当前旋转角就是自己这张」
+    // 时才用它旋转，避免切专辑瞬间读到上一张残留角度而闪一下（见 VinylRotationClock.albumId）。
+    spinAlbumId: String? = null
 ) {
     val primary = MaterialTheme.colorScheme.primary
     val isPlaceholder = coverUrl == null
@@ -1281,7 +1285,12 @@ private fun VinylRecord(
     Box(
         modifier = modifier
             .aspectRatio(1f)
-            .graphicsLayer { rotationZ = if (spin) tech.xvanturing.musicdav.ui.components.VinylRotationClock.angle else 0f }
+            .graphicsLayer {
+                val clock = tech.xvanturing.musicdav.ui.components.VinylRotationClock
+                // 仅当时钟的 albumId 已切到自己这张时才用其角度；切专辑那一帧时钟还停在上一张，
+                // 此时按 0 画，等 driver 把角度归零并切到本张后再跟着转，杜绝残留角度闪现。
+                rotationZ = if (spin && clock.albumId == spinAlbumId) clock.angle else 0f
+            }
             .clip(CircleShape)
             .background(VinylDiscColor),
         contentAlignment = Alignment.Center

@@ -17,6 +17,13 @@ import androidx.compose.runtime.withFrameNanos
 object VinylRotationClock {
     var angle by mutableFloatStateOf(0f)
         internal set
+
+    // 当前 angle 属于哪张专辑。碟只在确认「angle 就是自己这张的」时才用它旋转，否则按 0 显示。
+    // 因为 driver 的角度归零发生在 LaunchedEffect（组合之后），而碟在切专辑那一帧就已经用新的
+    // spin=true 重组并读了 clock.angle——此时 albumId 还是上一张，碟便知道这角度不是自己的、按 0
+    // 画，避免闪现上一张残留的角度（切专辑瞬间封面"闪一下/鬼影再转"）。
+    var albumId by mutableStateOf<String?>(null)
+        internal set
 }
 
 @Composable
@@ -25,6 +32,7 @@ fun VinylRotationDriver(playingAlbumId: String?, active: Boolean) {
     LaunchedEffect(playingAlbumId, active) {
         if (playingAlbumId != lastAlbumId.value) {
             VinylRotationClock.angle = 0f
+            VinylRotationClock.albumId = playingAlbumId
             lastAlbumId.value = playingAlbumId
         }
         if (active) {
