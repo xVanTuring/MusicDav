@@ -61,6 +61,9 @@ fun AlbumDetailScreen(
     modifier: Modifier = Modifier,
     onEdit: (Album) -> Unit = {},
     bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
+    // 是否"真正打开"：只有 true 时才发起网络拉取最新数据。缓存列表不受此限、挂载即显示。用来避免
+    // sheet 上拉一点又松开的瞬时挂载也发起请求、失败反复弹"无法获取最新数据"toast。
+    active: Boolean = true,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -74,6 +77,7 @@ fun AlbumDetailScreen(
     var isExtractingMetadata by remember { mutableStateOf(false) }
     var metadataExtractionProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var hasTriedInitialRefresh by remember { mutableStateOf(false) }
+    var hasLoadedCache by remember { mutableStateOf(false) }
     var forceRefreshKey by remember { mutableIntStateOf(0) }
 
     // 收藏状态
@@ -140,87 +144,90 @@ fun AlbumDetailScreen(
         }
     }
 
-    // 初始加载时刷新专辑详情
+    // 1) 加载缓存列表：挂载即做（本地读取、无网络、不弹 toast）——sheet 上拉过程中就能立刻看到内容。
     LaunchedEffect(album.id, forceRefreshKey) {
-        if (!hasTriedInitialRefresh) {
+        if (!hasLoadedCache) {
+            hasLoadedCache = true
+            val cachedFiles = withContext(Dispatchers.IO) { PlaylistCache.load(context, album.id) }
+            if (cachedFiles.isNotEmpty()) {
+                currentAlbumSongs = cachedFiles
+                playlistController.setSongAlbumCovers(cachedFiles, effectiveCoverImageUrl)
+                playlistController.loadCachedCovers(context, cachedFiles)
+            }
+        }
+    }
+
+    // 2) 拉取最新数据：只有 sheet 真正打开(active)后才做一次。避免"上拉一点又松开"的瞬时挂载也发起
+    //    网络请求、失败反复弹"无法获取最新数据"toast。onFailure/catch 里用 currentAlbumSongs 判断
+    //    是否已有缓存(由上面的效果填好)。
+    LaunchedEffect(album.id, forceRefreshKey, active) {
+        if (active && !hasTriedInitialRefresh) {
             hasTriedInitialRefresh = true
-            coroutineScope.launch {
-                // 先加载缓存数据（如果有），放到 IO 线程读取，避免阻塞主线程（进场滑动动画期间尤其明显）
-                val cachedFiles = withContext(Dispatchers.IO) { PlaylistCache.load(context, album.id) }
-                if (cachedFiles.isNotEmpty()) {
-                    currentAlbumSongs = cachedFiles
-                    // 设置专辑封面映射
-                    playlistController.setSongAlbumCovers(cachedFiles, effectiveCoverImageUrl)
-                    // 加载缓存封面
-                    playlistController.loadCachedCovers(context, cachedFiles)
-                }
+            try {
+                // 尝试获取最新数据并提取元数据
+                val webDavClient = WebDavClient()
 
-                try {
-                    // 尝试获取最新数据并提取元数据
-                    val webDavClient = WebDavClient()
-
-                    val fetchResult = if (serverConfig != null) {
-                        // 按候选地址顺序尝试，某个地址请求失败时自动换下一个候选地址重试
-                        ServerAddressResolver.withReachableAddress(serverConfig) { baseUrl ->
-                            val directoryUrl = resolveAlbumUrl(album.directoryUrl, baseUrl) ?: baseUrl
-                            webDavClient.fetchMusicFiles(
-                                serverConfig.toWebDavConfig(baseUrl).copy(url = directoryUrl),
-                                context,
-                                serverConfig.id
-                            ) { current, total ->
-                                metadataExtractionProgress = current to total
-                                isExtractingMetadata = true
-                            }
-                        }
-                    } else {
-                        val effectiveConfig = if (album.directoryUrl != null) {
-                            webDavConfig.copy(url = album.directoryUrl)
-                        } else {
-                            webDavConfig
-                        }
-                        webDavClient.fetchMusicFiles(effectiveConfig, context) { current, total ->
+                val fetchResult = if (serverConfig != null) {
+                    // 按候选地址顺序尝试，某个地址请求失败时自动换下一个候选地址重试
+                    ServerAddressResolver.withReachableAddress(serverConfig) { baseUrl ->
+                        val directoryUrl = resolveAlbumUrl(album.directoryUrl, baseUrl) ?: baseUrl
+                        webDavClient.fetchMusicFiles(
+                            serverConfig.toWebDavConfig(baseUrl).copy(url = directoryUrl),
+                            context,
+                            serverConfig.id
+                        ) { current, total ->
                             metadataExtractionProgress = current to total
                             isExtractingMetadata = true
                         }
                     }
-
-                    fetchResult
-                        .onSuccess { files ->
-                            currentAlbumSongs = files
-                            PlaylistCache.save(context, album.id, files)
-                            // 设置专辑封面映射
-                            playlistController.setSongAlbumCovers(files, effectiveCoverImageUrl)
-                            // 设置 WebDAV 配置
-                            playlistController.setCurrentWebDavConfig(webDavConfig)
-                            // 加载缓存封面
-                            playlistController.loadCachedCovers(context, files)
-                            isExtractingMetadata = false
-                            metadataExtractionProgress = null
-                        }
-                        .onFailure { e ->
-                            // 如果已经有缓存数据，显示提示
-                            if (cachedFiles.isNotEmpty()) {
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.album_toast_fetch_failed_use_cache),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                            isExtractingMetadata = false
-                            metadataExtractionProgress = null
-                        }
-                } catch (e: Exception) {
-                    // 如果已经有缓存数据，显示提示
-                    if (cachedFiles.isNotEmpty()) {
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.album_toast_fetch_failed_use_cache),
-                            Toast.LENGTH_SHORT
-                        ).show()
+                } else {
+                    val effectiveConfig = if (album.directoryUrl != null) {
+                        webDavConfig.copy(url = album.directoryUrl)
+                    } else {
+                        webDavConfig
                     }
-                    isExtractingMetadata = false
-                    metadataExtractionProgress = null
+                    webDavClient.fetchMusicFiles(effectiveConfig, context) { current, total ->
+                        metadataExtractionProgress = current to total
+                        isExtractingMetadata = true
+                    }
                 }
+
+                fetchResult
+                    .onSuccess { files ->
+                        currentAlbumSongs = files
+                        PlaylistCache.save(context, album.id, files)
+                        // 设置专辑封面映射
+                        playlistController.setSongAlbumCovers(files, effectiveCoverImageUrl)
+                        // 设置 WebDAV 配置
+                        playlistController.setCurrentWebDavConfig(webDavConfig)
+                        // 加载缓存封面
+                        playlistController.loadCachedCovers(context, files)
+                        isExtractingMetadata = false
+                        metadataExtractionProgress = null
+                    }
+                    .onFailure { e ->
+                        // 如果已经有缓存数据，显示提示
+                        if (currentAlbumSongs.isNotEmpty()) {
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.album_toast_fetch_failed_use_cache),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        isExtractingMetadata = false
+                        metadataExtractionProgress = null
+                    }
+            } catch (e: Exception) {
+                // 如果已经有缓存数据，显示提示
+                if (currentAlbumSongs.isNotEmpty()) {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.album_toast_fetch_failed_use_cache),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                isExtractingMetadata = false
+                metadataExtractionProgress = null
             }
         }
     }

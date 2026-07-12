@@ -29,9 +29,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Settings
@@ -54,14 +57,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -293,6 +296,9 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     // 高度（px）。底栏高度用 maxOf 保留展开时的完整值，免得导航栏收起动画中途变矮把行程算歪。
     var contentAreaHeightPx by remember { mutableIntStateOf(0) }
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
+    // 导航栏自身高度（px）：底栏随 sheet 打开整体下移的距离就是它——下移一个导航栏高度，播放条正好
+    // 沉到手势条上方、导航栏滑出屏外。用 maxOf 保留展开时的完整高度。
+    var navBarHeightPx by remember { mutableIntStateOf(0) }
 
     var sheetProgress by remember { mutableFloatStateOf(0f) }
     var sheetAnimJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
@@ -305,12 +311,17 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     // ① 程序动画到某进度。到 0（完全关闭）时把 selectedAlbum 卸载——挂载/卸载与进度落定原子绑定：
     // 只有关闭动画“真正跑完”这一行才执行，被拖拽取消则抛 CancellationException、这行不会跑，绝不会
     // 在动画途中把列表卸掉。
-    fun animateSheetTo(target: Float) {
+    // velocityPxPerSec 是松手瞬间的竖直速度（向上为负），换算成进度/秒（-v/行程，向上=进度增大=正）
+    // 传给 animate 作初速度，让"甩"的动量接进吸附动画里——不传就是从静止弹起，手感发肉、不跟手。
+    fun animateSheetTo(target: Float, velocityPxPerSec: Float = 0f) {
         sheetAnimJob?.cancel()
+        val travel = sheetTravelPx()
+        val initialVelocity = if (travel > 0f) -velocityPxPerSec / travel else 0f
         sheetAnimJob = scope.launch {
             animate(
                 initialValue = sheetProgress,
                 targetValue = target,
+                initialVelocity = initialVelocity,
                 animationSpec = SheetAnimationSpec
             ) { value, _ -> sheetProgress = value }
             if (target <= 0f) selectedAlbum = null
@@ -336,7 +347,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
             sheetProgress > SheetPositionalThreshold -> 1f
             else -> 0f
         }
-        animateSheetTo(target)
+        animateSheetTo(target, velocityPxPerSec)   // 把松手速度带进吸附动画，保留甩的动量
     }
 
     // 详情列表的嵌套滚动：列表未到顶时上滑先喂给 sheet 继续打开；到顶后下滑的剩余量喂给 sheet 收起；
@@ -370,31 +381,35 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
+                // 上甩且未完全打开：带速度吸附（开），并吃掉这段速度，别让列表再 fling。
                 return if (available.y < 0 && sheetProgress < 1f) {
                     settleSheet(available.y); available
                 } else Velocity.Zero
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                settleSheet(available.y)
-                return available
+                // 只处理列表消费完后剩下的“向下”甩（列表已到顶）：带速度吸附（关）。上甩已由
+                // onPreFling 处理，这里不能再无条件 settle，否则会用速度 0 覆盖掉上面带速度的吸附。
+                return if (available.y > 0f) {
+                    settleSheet(available.y); available
+                } else Velocity.Zero
             }
         }
     }
 
-    // 导航栏收起比例的实时读取器：0 = 完全展开，1 = 完全收起。以 lambda 形式提供，供导航栏的
-    // layout/graphicsLayer 块在 sheetProgress 每帧变化时被直接触发重算、跟手同步。
-    // 收起行程只用**一个底栏高度**：sheet 一上抬就盖住底栏那块区域，抬过一个底栏高度即完全收起，
-    // 让导航栏一开始上拉就迅速让位，不会大面积残留盖在列表上（"tab 残留一半"）。
-    // 没有 sheet 挂载（selectedAlbum==null）时强制返回 0（导航栏完整显示）——把"导航栏收起"与
-    // "有没有 sheet"绑成原子的一件事，杜绝 sheet 关掉后导航栏还卡在收起态。
-    val navBarCollapseFraction: () -> Float = {
-        if (selectedAlbum == null || bottomBarHeightPx <= 0) {
-            0f
-        } else {
-            val risenPx = sheetProgress * sheetTravelPx()   // sheet 已从关闭位置上抬的像素
-            (risenPx / bottomBarHeightPx).coerceIn(0f, 1f)
-        }
+    // 底栏「下移/收起」比例的实时读取器：0 = 完全展开，1 = 完全收起（下移一个导航栏高度）。
+    // 直接等于 sheetProgress，因此**跨越整段上拉行程**、跟手同步——修用户反馈"手势没划到一半底部
+    // 动画就结束了"。以 lambda 形式提供，供底栏的 offset/graphicsLayer 延迟块每帧读取，只重新放置/
+    // 合成、不重排(relayout)，消除"顿挫感"。没有 sheet 挂载时返回 0（导航栏完整显示），与挂载态原子。
+    val bottomBarSlideFraction: () -> Float = {
+        if (selectedAlbum == null) 0f else sheetProgress
+    }
+
+    // sheet 是否已完全打开。用 derivedStateOf，只在跨过阈值那一刻通知读者、不会每帧重组。
+    // 传给 AlbumDetailScreen 作 active：只有真正打开后才发起网络刷新，避免"上拉一点又松开"的
+    // 瞬时挂载也请求、失败反复弹 "无法获取最新数据" toast。
+    val sheetFullyOpen by remember {
+        derivedStateOf { selectedAlbum != null && sheetProgress >= 0.999f }
     }
 
     // 常驻底栏（迷你播放条 + 3-tab 导航栏）的可见性：导航栏只在首页（Tabs 且没有打开子表单）
@@ -417,21 +432,33 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
         androidx.compose.material3.Scaffold(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
-                Column(
-                    modifier = Modifier
-                        // 底栏背景铺满到物理屏幕底部（含手势导航条那段 inset），内容(播放条+导航栏)只上移
-                        // 到手势条上方。这样不管此刻底部是导航栏(首页)还是播放条(详情/收藏)，手势条区域都
-                        // 被同一底栏色填满，不再露出屏幕背景色带（即用户说的"残影"）。背景色取 surfaceContainerHigh
-                        // 与播放条一致，并把导航栏容器色也统一成它，衔接处无色差。
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                        .padding(bottom = systemBottomInset)
-                        .onSizeChanged { size ->
-                            // onSizeChanged 在 padding 内侧，测到的是内容(播放条+导航栏)高度、不含 inset，
-                            // 与之前 navigationBarsPadding 时的语义一致，sheet 几何(Closed 锚点)不变。
-                            // 导航栏收起时 Column 会变矮，逐帧回调；用 maxOf 保留展开时的完整高度。
-                            bottomBarHeightPx = maxOf(bottomBarHeightPx, size.height)
-                        }
-                ) {
+                // 底栏：一层持久的手势条填充(永远铺满 inset、不随 sheet 动，杜绝残影) + [播放条][导航栏]
+                // 整体随 sheet 打开按 bottomBarSlideFraction **整体下移一个导航栏高度**(placement offset，
+                // 不重排)：播放条下沉到手势条上方保持常驻可见，导航栏滑出屏底并淡出。整段动画只做重新
+                // 放置/合成、不做逐帧 relayout，也不移动带阴影的播放条布局(阴影只随图层平移，不重绘)，
+                // 消除"顿挫感"；且行程跨越整段上拉、不再半路就结束。
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    // 持久手势条填充：永远贴最底部，surfaceContainerHigh，与播放条/导航栏同色无缝。
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(systemBottomInset)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    )
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            // 整体下移：offset 是延迟放置块，随 fraction 每帧只重新放置，不触发重排。
+                            .offset {
+                                IntOffset(0, (bottomBarSlideFraction() * navBarHeightPx).roundToInt())
+                            }
+                            .padding(bottom = systemBottomInset)   // 内容坐落在手势条填充之上
+                            .onSizeChanged { size ->
+                                // 测到的是内容(播放条+导航栏)高度、不含 inset，作为 sheet 的 Closed 行程基准。
+                                bottomBarHeightPx = maxOf(bottomBarHeightPx, size.height)
+                            }
+                    ) {
                     AnimatedVisibility(
                         visible = playerVisible,
                         enter = slideInVertically { it } + fadeIn(),
@@ -460,23 +487,14 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                     ) {
                         NavigationBar(
                             windowInsets = WindowInsets(0, 0, 0, 0),
-                            // 底部 inset 由外层 Column 的 padding 统一处理，这里不再自己留 inset。
-                            // 容器色与播放条/底栏填充统一，衔接处无色差。
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                // 导航栏随详情 sheet 展开而收起：淡出 + 布局高度按 (1-fraction) 收缩。
-                                // 它在 Column 里位于播放条下方、Column 底部锚定，收缩其布局高度会让上方
-                                // 播放条自然下沉到屏底并保持可见（播放条本身不加位移）。clipToBounds 裁掉
-                                // 收缩后溢出的部分。fraction 在 layout/graphicsLayer 块里实时读取，随
-                                // sheetProgress 每帧变化重算，实现跟手同步。
-                                .graphicsLayer { alpha = (1f - navBarCollapseFraction()).coerceIn(0f, 1f) }
-                                .clipToBounds()
-                                .layout { measurable, constraints ->
-                                    val placeable = measurable.measure(constraints)
-                                    val collapsed = (placeable.height * (1f - navBarCollapseFraction()))
-                                        .roundToInt().coerceAtLeast(0)
-                                    layout(placeable.width, collapsed) { placeable.place(0, 0) }
+                                // 只测量导航栏自身高度作为整体下移的距离；位置下移由外层 Column 的 offset
+                                // 统一处理。不做淡出——导航栏在播放条下方整体向下平移滑出屏底，不会盖到
+                                // 列表，保持不透明即可。
+                                .onSizeChanged { size ->
+                                    navBarHeightPx = maxOf(navBarHeightPx, size.height)
                                 }
                         ) {
                             NavigationBarItem(
@@ -513,6 +531,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                                 label = { Text(stringResource(R.string.nav_cache)) }
                             )
                         }
+                    }
                     }
                 }
             }
@@ -672,9 +691,24 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                             modifier = Modifier.fillMaxSize(),
                             // 播放条随 sheet 打开常驻在详情底部可见（只有导航栏收起），所以详情列表要为
                             // 播放条预留高度，否则最后一首会被播放条挡住。
-                            bottomInset = contentBottomInset
+                            bottomInset = contentBottomInset,
+                            // 只有 sheet 完全打开后才拉取最新数据——上拉一点又松开(退回)不会触发网络请求。
+                            active = sheetFullyOpen
                         )
                     }
+                    // sheet 顶部很细的拖拽横线（抓手）：贴在 sheet 顶边，拖拽/半开时可见，接近完全展开时
+                    // 淡出，避免遮挡顶栏。alpha 在 graphicsLayer 里读 sheetProgress，逐帧只合成、不重组。
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 8.dp)
+                            .size(width = 36.dp, height = 4.dp)
+                            .graphicsLayer {
+                                alpha = 0.5f * ((1f - sheetProgress) / 0.2f).coerceIn(0f, 1f)
+                            }
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant)
+                    )
                 }
             }
             }
