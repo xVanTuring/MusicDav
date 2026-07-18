@@ -14,7 +14,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -69,6 +70,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -79,7 +81,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -120,6 +124,7 @@ import tech.xvanturing.musicdav.ui.theme.fadeThrough
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.absoluteValue
 
 // Home view-mode toggle, persisted so it sticks across app launches.
@@ -1020,6 +1025,8 @@ private fun CarouselHomeContent(
     val entries = remember(albums) {
         listOf<HomeEntry>(HomeEntry.Favorites) + albums.map { HomeEntry.AlbumEntry(it) }
     }
+    // 供 pointerInput(Unit) 内的手势协程实时读取最新列表（见下方注释）
+    val currentEntries by rememberUpdatedState(entries)
     // 竖直上拉进入详情 sheet 拖动模式期间为 true，用于屏蔽 HorizontalPager 的横向翻页手势，
     // 避免上拉同时误触横滑换碟。
     var sheetDragging by remember { mutableStateOf(false) }
@@ -1054,54 +1061,72 @@ private fun CarouselHomeContent(
             // 底部那条(页码圆点与播放条之间的预留区)就成了上拉死区、拖不动 sheet。放到 padding 外面
             // 让手势覆盖整列；播放条/导航栏是 Scaffold 的 bottomBar 画在最上层，各自的点击照常先被它们
             // 接走，只有空白处的拖拽才落到这里。
-            .pointerInput(entries) {
-                // 上滑：不管居中的是专辑还是收藏夹，都从第一次越过 touch-slop 判明方向起，把之后
-                // 每一帧的位移实时喂给 sheet（手指跟随，见 onAlbumSheetDragStart/onFavoritesSheetDragStart
-                // + onSheetDrag），松手时把 VelocityTracker 采样到的速度交给 onSheetDragEnd 做
-                // 位置+速度吸附（复用 settleSheet 现成的阈值，不重新发明一套）。
-                var isSheetDrag = false
-                var directionDetermined = false
-                val velocityTracker = VelocityTracker()
-                fun reset() {
-                    isSheetDrag = false
-                    directionDetermined = false
-                    sheetDragging = false
-                }
-                detectVerticalDragGestures(
-                    onDragStart = {
-                        reset()
-                        velocityTracker.resetTracking()
-                    },
-                    onDragEnd = {
-                        if (isSheetDrag) {
-                            onSheetDragEnd(velocityTracker.calculateVelocity().y)
-                        }
-                        reset()
-                    },
-                    onDragCancel = {
-                        if (isSheetDrag) onSheetDragEnd(0f)
-                        reset()
-                    },
-                    onVerticalDrag = { change, amount ->
-                        velocityTracker.addPosition(change.uptimeMillis, change.position)
-                        if (!directionDetermined) {
-                            directionDetermined = true
-                            if (amount < 0f) {
-                                val entry = entries[pagerState.currentPage % entries.size]
-                                isSheetDrag = true
-                                sheetDragging = true
-                                when (entry) {
-                                    is HomeEntry.AlbumEntry -> onAlbumSheetDragStart(entry.album)
-                                    is HomeEntry.Favorites -> onFavoritesSheetDragStart()
+            .pointerInput(Unit) {
+                // 上滑出 sheet 的手势判定，自己在 Initial pass 收事件而不是用 detectVerticalDragGestures：
+                // 后者在 Main pass 与 pager 竞争，快速斜向上滑单帧位移就同时越过横竖 slop，而 Main pass
+                // 子节点(pager)先拿到事件、先消费掉，上滑被判成翻页——"偶尔脱手"（慢拉没事、快甩失灵）
+                // 的主因。Initial pass 父先于子，这里累计位移：竖向越过 slop 且竖向占优、方向向上 → 接管
+                // （之后每帧喂给 sheet 并消费，pager 拿不到）；横向占优 → 放行给 pager 翻页。
+                // 方向用「累计值」判定而不是越过 slop 后第一帧的符号——起手带一点下探的上拉不再变成
+                // 整段死手势；没接管前一直观察，中途改主意向上拉也随时能接管。
+                // 键用 Unit（entries 经 rememberUpdatedState 实时读）：专辑列表刷新不重启手势协程，
+                // 不会把拖到一半的 sheet 晾在半空。
+                val slop = viewConfiguration.touchSlop
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    val velocityTracker = VelocityTracker()
+                    velocityTracker.addPosition(down.uptimeMillis, down.position)
+                    var accX = 0f
+                    var accY = 0f
+                    var claimed = false
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                if (claimed) {
+                                    change.consume()
+                                    onSheetDragEnd(velocityTracker.calculateVelocity().y)
+                                    claimed = false
                                 }
+                                break
+                            }
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                            val delta = change.positionChange()
+                            if (!claimed) {
+                                accX += delta.x
+                                accY += delta.y
+                                when {
+                                    // 横向占优：让给 pager 翻页，本手势退出观察
+                                    abs(accX) > slop && abs(accX) > abs(accY) -> break
+                                    // 竖向越过 slop 且向上：接管
+                                    abs(accY) > slop && accY < 0f -> {
+                                        claimed = true
+                                        sheetDragging = true
+                                        val list = currentEntries
+                                        when (val entry = list[pagerState.currentPage % list.size]) {
+                                            is HomeEntry.AlbumEntry -> onAlbumSheetDragStart(entry.album)
+                                            is HomeEntry.Favorites -> onFavoritesSheetDragStart()
+                                        }
+                                        // 把越过 slop 后的余量作为第一帧位移，起步不跳变
+                                        onSheetDrag(accY + slop)
+                                        change.consume()
+                                    }
+                                }
+                            } else {
+                                onSheetDrag(delta.y)
+                                change.consume()
                             }
                         }
-                        if (isSheetDrag) {
-                            onSheetDrag(amount)
+                    } finally {
+                        if (claimed) {
+                            // 事件流异常中断（手势被取消/组件销毁）：按已采样速度收尾吸附，
+                            // 不把 sheet 晾在半空
+                            onSheetDragEnd(velocityTracker.calculateVelocity().y)
                         }
-                        change.consume()
+                        sheetDragging = false
                     }
-                )
+                }
             }
             // padding 放到手势之后(内侧)：内容仍被 inset 顶到底栏之上，但上拉手势覆盖整列、无死区。
             .padding(bottom = bottomInset),

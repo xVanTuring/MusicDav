@@ -1,7 +1,6 @@
 package tech.xvanturing.musicdav.ui.screen
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Alignment
@@ -27,7 +26,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -45,6 +43,7 @@ import tech.xvanturing.musicdav.player.PlaylistStateController
 import tech.xvanturing.musicdav.player.CacheManager
 import tech.xvanturing.musicdav.ui.MusicListScreen
 import tech.xvanturing.musicdav.ui.components.AppTopBar
+import tech.xvanturing.musicdav.ui.components.sheetTopBarDrag
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -84,6 +83,10 @@ fun AlbumDetailScreen(
     // 是否"真正打开"：只有 true 时才发起网络拉取最新数据。缓存列表不受此限、挂载即显示。用来避免
     // sheet 上拉一点又松开的瞬时挂载也发起请求、失败反复弹"无法获取最新数据"toast。
     active: Boolean = true,
+    // 顶栏下拉的手指跟随通道（每帧 dy / 松手速度 px/s，见 Modifier.sheetTopBarDrag）；
+    // 不传则退化为"下拉超 120px 触发 onBack"的旧行为。
+    onSheetDrag: ((Float) -> Unit)? = null,
+    onSheetDragEnd: ((Float) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -264,13 +267,7 @@ fun AlbumDetailScreen(
     Scaffold(
         topBar = {
             Box(
-                modifier = Modifier.pointerInput(Unit) {
-                    var dragY = 0f
-                    detectVerticalDragGestures(
-                        onDragEnd = { if (dragY > 120f) onBack(); dragY = 0f },
-                        onVerticalDrag = { change, amount -> dragY += amount; change.consume() }
-                    )
-                }
+                modifier = Modifier.sheetTopBarDrag(onSheetDrag, onSheetDragEnd) { onBack() }
             ) {
             AppTopBar(
                 title = album.name,

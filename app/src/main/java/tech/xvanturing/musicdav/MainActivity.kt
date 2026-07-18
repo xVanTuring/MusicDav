@@ -140,10 +140,15 @@ private sealed interface SheetContent {
  * 挂载哪块内容（专辑详情/收藏夹/搜索）由 [SheetContent] 决定，与这套开合机制完全解耦。
  */
 
-/** 程序动画（点击打开 / 返回关闭 / 松手吸附）用的弹簧：临界阻尼、不回弹。 */
+/**
+ * 程序动画（点击打开 / 返回关闭 / 松手吸附）用的弹簧：临界阻尼、不回弹。
+ * 刚度用 MediumLow(400)：之前的 Medium(1500) 全屏行程 ~120ms 就收完，松手瞬间像被"吸走"、
+ * 显得急促；400 约 250-300ms 滑行更顺。快甩时松手速度会注入动画初速度（见 animateSheetTo），
+ * 起步依旧跟手不发肉，软刚度只影响后段减速的从容程度。
+ */
 private val SheetAnimationSpec = spring<Float>(
     dampingRatio = Spring.DampingRatioNoBouncy,
-    stiffness = Spring.StiffnessMedium
+    stiffness = Spring.StiffnessMediumLow
 )
 
 /** 松手速度（px/s）超过它就只按方向吸附，忽略当前进度是否过阈值。 */
@@ -681,7 +686,10 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                                     bottomInset = contentBottomInset,
                                     // 只有 sheet 完全打开后才拉取最新数据——上拉一点又松开(退回)不会触发
                                     // 网络请求。
-                                    active = sheetFullyOpen
+                                    active = sheetFullyOpen,
+                                    // 顶栏下拉走手指跟随：与轮播上拉/列表下拉同一套进度驱动与吸附
+                                    onSheetDrag = { dy -> dragSheetByRisePx(-dy) },
+                                    onSheetDragEnd = { velocity -> settleSheet(velocity) }
                                 )
                             }
                         }
@@ -692,7 +700,9 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                                 playlistController = playlistController,
                                 modifier = Modifier.fillMaxSize(),
                                 bottomInset = contentBottomInset,
-                                active = sheetFullyOpen
+                                active = sheetFullyOpen,
+                                onSheetDrag = { dy -> dragSheetByRisePx(-dy) },
+                                onSheetDragEnd = { velocity -> settleSheet(velocity) }
                             )
                         }
 
@@ -702,7 +712,9 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                                 playlistController = playlistController,
                                 modifier = Modifier.fillMaxSize(),
                                 bottomInset = contentBottomInset,
-                                active = sheetFullyOpen
+                                active = sheetFullyOpen,
+                                onSheetDrag = { dy -> dragSheetByRisePx(-dy) },
+                                onSheetDragEnd = { velocity -> settleSheet(velocity) }
                             )
                         }
                     }

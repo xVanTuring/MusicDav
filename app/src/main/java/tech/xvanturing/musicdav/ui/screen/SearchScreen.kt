@@ -1,7 +1,6 @@
 package tech.xvanturing.musicdav.ui.screen
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -54,6 +52,7 @@ import tech.xvanturing.musicdav.data.resolveAlbumUrl
 import tech.xvanturing.musicdav.player.CacheManager
 import tech.xvanturing.musicdav.player.PlaylistStateController
 import tech.xvanturing.musicdav.ui.MusicListScreen
+import tech.xvanturing.musicdav.ui.components.sheetTopBarDrag
 import tech.xvanturing.musicdav.webdav.WebDavClient
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,6 +66,9 @@ fun SearchScreen(
     // 关联了服务器配置的专辑做一次网络地址探测，与 AlbumDetailScreen 的 active 同一用意，避免
     // sheet 上拉一点又松开的瞬时挂载也发起这些请求。
     active: Boolean = true,
+    // 顶栏下拉的手指跟随通道，同 AlbumDetailScreen
+    onSheetDrag: ((Float) -> Unit)? = null,
+    onSheetDragEnd: ((Float) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -160,13 +162,7 @@ fun SearchScreen(
     Scaffold(
         topBar = {
             Box(
-                modifier = Modifier.pointerInput(Unit) {
-                    var dragY = 0f
-                    detectVerticalDragGestures(
-                        onDragEnd = { if (dragY > 120f) onBack(); dragY = 0f },
-                        onVerticalDrag = { change, amount -> dragY += amount; change.consume() }
-                    )
-                }
+                modifier = Modifier.sheetTopBarDrag(onSheetDrag, onSheetDragEnd) { onBack() }
             ) {
             TopAppBar(
                 title = {

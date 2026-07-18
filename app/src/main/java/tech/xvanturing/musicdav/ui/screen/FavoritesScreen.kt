@@ -1,7 +1,6 @@
 package tech.xvanturing.musicdav.ui.screen
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -17,7 +16,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -32,6 +30,7 @@ import tech.xvanturing.musicdav.player.CacheManager
 import tech.xvanturing.musicdav.player.PlaylistStateController
 import tech.xvanturing.musicdav.ui.MusicListScreen
 import tech.xvanturing.musicdav.ui.components.AppTopBar
+import tech.xvanturing.musicdav.ui.components.sheetTopBarDrag
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,6 +42,9 @@ fun FavoritesScreen(
     // 是否"真正打开"：只有 true 时才发起 resolvePlayable 里的服务器地址解析(网络探测)。用来
     // 避免 sheet 上拉一点又松开的瞬时挂载也发起探测请求，与 AlbumDetailScreen 的 active 同一用意。
     active: Boolean = true,
+    // 顶栏下拉的手指跟随通道，同 AlbumDetailScreen
+    onSheetDrag: ((Float) -> Unit)? = null,
+    onSheetDragEnd: ((Float) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -74,13 +76,7 @@ fun FavoritesScreen(
     Scaffold(
         topBar = {
             Box(
-                modifier = Modifier.pointerInput(Unit) {
-                    var dragY = 0f
-                    detectVerticalDragGestures(
-                        onDragEnd = { if (dragY > 120f) onBack(); dragY = 0f },
-                        onVerticalDrag = { change, amount -> dragY += amount; change.consume() }
-                    )
-                }
+                modifier = Modifier.sheetTopBarDrag(onSheetDrag, onSheetDragEnd) { onBack() }
             ) {
                 AppTopBar(
                     title = stringResource(R.string.common_favorites),
