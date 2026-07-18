@@ -434,20 +434,13 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
         androidx.compose.material3.Scaffold(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
-                // 底栏：一层持久的手势条填充(永远铺满 inset、不随 sheet 动，杜绝残影) + [播放条][导航栏]
-                // 整体随 sheet 打开按 bottomBarSlideFraction **整体下移一个导航栏高度**(placement offset，
-                // 不重排)：播放条下沉到手势条上方保持常驻可见，导航栏滑出屏底并淡出。整段动画只做重新
-                // 放置/合成、不做逐帧 relayout，也不移动带阴影的播放条布局(阴影只随图层平移，不重绘)，
-                // 消除"顿挫感"；且行程跨越整段上拉、不再半路就结束。
+                // 底栏：[播放条][导航栏]整体随 sheet 打开按 bottomBarSlideFraction **整体下移一个
+                // 导航栏高度**(placement offset，不重排)：播放条下沉到手势条上方保持常驻可见，导航栏
+                // 滑出内容区。整段动画只做重新放置/合成、不做逐帧 relayout，也不移动带阴影的播放条
+                // 布局(阴影只随图层平移，不重绘)，消除"顿挫感"；且行程跨越整段上拉、不再半路就结束。
+                // 最上层再画持久手势条填充（见 Column 之后）：下移距离恰好是导航栏高度，导航栏顶部
+                // 会正好停在手势条区域里，填充画在其上才能把这条盖掉——导航栏是"滑进手势条底下"消失。
                 Box(modifier = Modifier.fillMaxWidth()) {
-                    // 持久手势条填充：永远贴最底部，surfaceContainerHigh，与播放条/导航栏同色无缝。
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(systemBottomInset)
-                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    )
                     Column(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -535,6 +528,16 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                         }
                     }
                     }
+                    // 持久手势条填充：永远铺满 inset、不随 sheet 动，杜绝残影。画在滑动列**之上**：
+                    // sheet 全开时导航栏顶部正好滑到这块区域里，填充在上层才能盖住它（同色无缝，
+                    // 视觉上导航栏滑进手势条底下消失）；画在下层会露出一条 tab 图标的上沿。
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(systemBottomInset)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    )
                 }
             }
         ) { _ ->
