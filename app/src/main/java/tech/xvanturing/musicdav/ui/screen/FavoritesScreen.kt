@@ -39,7 +39,10 @@ fun FavoritesScreen(
     onBack: () -> Unit,
     playlistController: PlaylistStateController,
     modifier: Modifier = Modifier,
-    bottomInset: androidx.compose.ui.unit.Dp = 0.dp
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
+    // 是否"真正打开"：只有 true 时才发起 resolvePlayable 里的服务器地址解析(网络探测)。用来
+    // 避免 sheet 上拉一点又松开的瞬时挂载也发起探测请求，与 AlbumDetailScreen 的 active 同一用意。
+    active: Boolean = true,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -52,7 +55,8 @@ fun FavoritesScreen(
 
     BackHandler { onBack() }
 
-    LaunchedEffect(refreshKey) {
+    LaunchedEffect(refreshKey, active) {
+        if (!active) return@LaunchedEffect
         isLoading = true
         val favorites = FavoritesRepository.load(context)
         val resolved = favorites.mapNotNull { it.resolvePlayable(context) }

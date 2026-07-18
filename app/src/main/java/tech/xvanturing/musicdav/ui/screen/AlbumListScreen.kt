@@ -167,7 +167,8 @@ fun AlbumListScreen(
     onTogglePlayPause: () -> Unit = {},
     carouselPage: Int = -1,
     onCarouselPageChange: (Int) -> Unit = {},
-    onSheetDragStart: (Album) -> Unit = {},
+    onAlbumSheetDragStart: (Album) -> Unit = {},
+    onFavoritesSheetDragStart: () -> Unit = {},
     onSheetDrag: (Float) -> Unit = {},
     onSheetDragEnd: (Float) -> Unit = {},
 
@@ -375,7 +376,8 @@ fun AlbumListScreen(
                             onTogglePlayPause = onTogglePlayPause,
                             carouselPage = carouselPage,
                             onCarouselPageChange = onCarouselPageChange,
-                            onSheetDragStart = onSheetDragStart,
+                            onAlbumSheetDragStart = onAlbumSheetDragStart,
+                            onFavoritesSheetDragStart = onFavoritesSheetDragStart,
                             onSheetDrag = onSheetDrag,
                             onSheetDragEnd = onSheetDragEnd
                         )
@@ -1009,7 +1011,8 @@ private fun CarouselHomeContent(
     onTogglePlayPause: () -> Unit = {},
     carouselPage: Int = -1,
     onCarouselPageChange: (Int) -> Unit = {},
-    onSheetDragStart: (Album) -> Unit = {},
+    onAlbumSheetDragStart: (Album) -> Unit = {},
+    onFavoritesSheetDragStart: () -> Unit = {},
     onSheetDrag: (Float) -> Unit = {},
     onSheetDragEnd: (Float) -> Unit = {}
 ) {
@@ -1052,16 +1055,14 @@ private fun CarouselHomeContent(
             // 让手势覆盖整列；播放条/导航栏是 Scaffold 的 bottomBar 画在最上层，各自的点击照常先被它们
             // 接走，只有空白处的拖拽才落到这里。
             .pointerInput(entries) {
-                // 上滑：若居中的是专辑，从第一次越过 touch-slop 判明方向起，把之后每一帧的位移
-                // 实时喂给详情 sheet（手指跟随，见 onSheetDragStart/onSheetDrag），松手时把
-                // VelocityTracker 采样到的速度交给 onSheetDragEnd 做位置+速度吸附。若居中的是
-                // 收藏夹，维持旧的「上滑越过 120px 松手才打开」阈值行为。
-                var dragY = 0f
+                // 上滑：不管居中的是专辑还是收藏夹，都从第一次越过 touch-slop 判明方向起，把之后
+                // 每一帧的位移实时喂给 sheet（手指跟随，见 onAlbumSheetDragStart/onFavoritesSheetDragStart
+                // + onSheetDrag），松手时把 VelocityTracker 采样到的速度交给 onSheetDragEnd 做
+                // 位置+速度吸附（复用 settleSheet 现成的阈值，不重新发明一套）。
                 var isSheetDrag = false
                 var directionDetermined = false
                 val velocityTracker = VelocityTracker()
                 fun reset() {
-                    dragY = 0f
                     isSheetDrag = false
                     directionDetermined = false
                     sheetDragging = false
@@ -1074,9 +1075,6 @@ private fun CarouselHomeContent(
                     onDragEnd = {
                         if (isSheetDrag) {
                             onSheetDragEnd(velocityTracker.calculateVelocity().y)
-                        } else if (dragY < -120f) {
-                            val entry = entries[pagerState.currentPage % entries.size]
-                            if (entry is HomeEntry.Favorites) onOpenFavorites()
                         }
                         reset()
                     },
@@ -1085,16 +1083,16 @@ private fun CarouselHomeContent(
                         reset()
                     },
                     onVerticalDrag = { change, amount ->
-                        dragY += amount
                         velocityTracker.addPosition(change.uptimeMillis, change.position)
                         if (!directionDetermined) {
                             directionDetermined = true
                             if (amount < 0f) {
                                 val entry = entries[pagerState.currentPage % entries.size]
-                                if (entry is HomeEntry.AlbumEntry) {
-                                    isSheetDrag = true
-                                    sheetDragging = true
-                                    onSheetDragStart(entry.album)
+                                isSheetDrag = true
+                                sheetDragging = true
+                                when (entry) {
+                                    is HomeEntry.AlbumEntry -> onAlbumSheetDragStart(entry.album)
+                                    is HomeEntry.Favorites -> onFavoritesSheetDragStart()
                                 }
                             }
                         }

@@ -62,7 +62,11 @@ fun SearchScreen(
     onBack: () -> Unit,
     playlistController: PlaylistStateController,
     modifier: Modifier = Modifier,
-    bottomInset: androidx.compose.ui.unit.Dp = 0.dp
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
+    // 是否"真正打开"：只有 true 时才建立索引——索引过程里 ServerAddressResolver.resolve 会为每个
+    // 关联了服务器配置的专辑做一次网络地址探测，与 AlbumDetailScreen 的 active 同一用意，避免
+    // sheet 上拉一点又松开的瞬时挂载也发起这些请求。
+    active: Boolean = true,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -74,11 +78,15 @@ fun SearchScreen(
     // 已解析出可播放地址的全部曲目（跨专辑/服务器），本地过滤时直接从这里搜
     var indexedSongs by remember { mutableStateOf<List<Pair<MusicFile, Album>>>(emptyList()) }
     var songConfigMap by remember { mutableStateOf<Map<String, WebDavConfig>>(emptyMap()) }
+    var hasIndexed by remember { mutableStateOf(false) }
 
     BackHandler { onBack() }
 
-    // 遍历所有专辑本地已缓存的歌曲列表建立搜索索引，不发起任何网络请求
-    LaunchedEffect(Unit) {
+    // 遍历所有专辑本地已缓存的歌曲列表建立搜索索引；地址解析可能发起网络探测，故只在 sheet 完全
+    // 打开(active)后做一次(hasIndexed 保证只跑一次，避免拖拽反复经过 active 边界时重复建索引)。
+    LaunchedEffect(active) {
+        if (!active || hasIndexed) return@LaunchedEffect
+        hasIndexed = true
         val albums = AlbumsRepository.load(context)
         val serverConfigs = ServerConfigRepository.load(context)
         val webDavClient = WebDavClient()

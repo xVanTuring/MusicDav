@@ -86,7 +86,6 @@ import tech.xvanturing.musicdav.ui.screen.NowPlayingScreen
 import tech.xvanturing.musicdav.ui.screen.SearchScreen
 import tech.xvanturing.musicdav.ui.screen.ServerConfigCreateScreen
 import tech.xvanturing.musicdav.ui.screen.ServerConfigListScreen
-import tech.xvanturing.musicdav.ui.theme.MotionSpec
 import tech.xvanturing.musicdav.ui.theme.MusicDavTheme
 import tech.xvanturing.musicdav.ui.theme.VinylEasingDecelerate
 import tech.xvanturing.musicdav.ui.theme.VinylEasingStandard
@@ -102,41 +101,43 @@ import tech.xvanturing.musicdav.ui.theme.slideUpEnter
  * an [AnimatedContent] exit animation never has to re-read top-level mutable
  * state (which may already have changed/gone null by the time the exit
  * animation is still composing the old screen).
+ *
+ * Favorites/Search/album-detail are no longer part of [AppScreen] — they are
+ * rendered as [SheetContent], a single finger-following drag sheet driven by
+ * a single sheetProgress value (see [MusicPlayerApp]) layered above this root
+ * router instead of going through [AnimatedContent].
  */
 private sealed interface AppScreen {
     data object Tabs : AppScreen
     data class Edit(val album: tech.xvanturing.musicdav.data.Album?) : AppScreen
-    data object Favorites : AppScreen
-    data object Search : AppScreen
 }
-
-/**
- * Whether this screen should be presented as a "sheet" over the home tabs —
- * sliding up from the bottom on enter (and down on exit) instead of the
- * regular horizontal push/pop used for depth navigation within a stack.
- *
- * Album detail is no longer part of [AppScreen] — it is rendered as its own
- * finger-following drag sheet driven by a single sheetProgress value (see
- * [MusicPlayerApp]) layered above this root router instead of going through
- * [AnimatedContent].
- */
-private fun AppScreen.isSheet(): Boolean =
-    this is AppScreen.Favorites || this is AppScreen.Search
 
 /** Navigation depth used to pick a transition direction in [MusicPlayerApp]. */
 private fun AppScreen.depth(): Int = when (this) {
     AppScreen.Tabs -> 0
-    is AppScreen.Favorites -> 1
-    is AppScreen.Search -> 1
-    is AppScreen.Edit -> 2
+    is AppScreen.Edit -> 1
 }
 
 /**
- * 专辑详情 sheet 的开合，全部由**唯一一个进度值** `sheetProgress` ∈ [0,1] 驱动
+ * Whatever is currently mounted in the drag sheet layered above the root
+ * router — album detail, favorites, or search. Null means the sheet is
+ * unmounted (fully closed). Unifies what used to be three mutually-exclusive
+ * booleans/nullables (`selectedAlbum`/`showFavorites`/`showSearch`) into one
+ * state, since only one of them could ever be open at a time anyway.
+ */
+private sealed interface SheetContent {
+    data class AlbumDetail(val album: tech.xvanturing.musicdav.data.Album) : SheetContent
+    data object Favorites : SheetContent
+    data object Search : SheetContent
+}
+
+/**
+ * sheet 的开合，全部由**唯一一个进度值** `sheetProgress` ∈ [0,1] 驱动
  * （见 [MusicPlayerApp]）：0 = 完全关闭（列表藏在底栏下方），1 = 完全打开（铺满整屏）。
  * sheet 位移、导航栏收起、是否挂载 都只**读**这个值推算；改它只有两条路：程序动画
  * （点击打开 / 返回关闭 / 松手吸附）与手指拖拽（轮播上拉 / 详情列表下拉），且任何拖拽都会
  * 取消正在跑的动画，保证同一时刻只有一个驱动者——彻底原子，不再有多输入抢一个 offset 的竞态。
+ * 挂载哪块内容（专辑详情/收藏夹/搜索）由 [SheetContent] 决定，与这套开合机制完全解耦。
  */
 
 /** 程序动画（点击打开 / 返回关闭 / 松手吸附）用的弹簧：临界阻尼、不回弹。 */
@@ -242,10 +243,8 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
             )
         )
     }
-    var selectedAlbum by remember { mutableStateOf<tech.xvanturing.musicdav.data.Album?>(null) }
+    var sheetContent by remember { mutableStateOf<SheetContent?>(null) }
     var editingAlbum by remember { mutableStateOf<tech.xvanturing.musicdav.data.Album?>(null) }
-    var showFavorites by remember { mutableStateOf(false) }
-    var showSearch by remember { mutableStateOf(false) }
     var showNowPlaying by remember { mutableStateOf(false) }
     val playlistController = rememberPlaylistStateController()
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -264,7 +263,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
 
     // 在主页面的返回键处理：双击退出
     var lastBackPressTime by remember { mutableLongStateOf(0L) }
-    androidx.activity.compose.BackHandler(enabled = selectedAlbum == null && editingAlbum == null && !showFavorites && !showSearch && !showNowPlaying) {
+    androidx.activity.compose.BackHandler(enabled = sheetContent == null && editingAlbum == null && !showNowPlaying) {
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastBackPressTime < 2000) {
             // 两次点击间隔小于2秒，退出应用
@@ -282,14 +281,13 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
 
     val screen: AppScreen = when {
         editingAlbum != null -> AppScreen.Edit(editingAlbum)
-        showFavorites -> AppScreen.Favorites
-        showSearch -> AppScreen.Search
         else -> AppScreen.Tabs
     }
 
-    // 专辑详情不再是 AnimatedContent 里的一个 AppScreen 分支，而是叠在根内容之上的手指跟随 sheet。
-    // 唯一真相源：开合进度 sheetProgress ∈ [0,1]，0=完全关闭、1=完全打开（见文件顶部 SheetAnimationSpec
-    // 附近的说明）。selectedAlbum 负责挂载/卸载 sheet 内容；sheetProgress 负责它的位置与导航栏收起。
+    // 专辑详情/收藏夹/搜索都不是 AnimatedContent 里的 AppScreen 分支，而是叠在根内容之上的手指
+    // 跟随 sheet。唯一真相源：开合进度 sheetProgress ∈ [0,1]，0=完全关闭、1=完全打开（见文件顶部
+    // SheetAnimationSpec 附近的说明）。sheetContent 负责挂载/卸载 sheet 内容；sheetProgress 负责它的
+    // 位置与导航栏收起。
     val scope = rememberCoroutineScope()
 
     // 内容区高度（px，也是 sheet 完全关闭时需要下移藏起的行程基准）与常驻底栏（播放条+导航栏）整体
@@ -308,9 +306,9 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     val sheetTravelPx: () -> Float =
         { (contentAreaHeightPx - bottomBarHeightPx).coerceAtLeast(0).toFloat() }
 
-    // ① 程序动画到某进度。到 0（完全关闭）时把 selectedAlbum 卸载——挂载/卸载与进度落定原子绑定：
+    // ① 程序动画到某进度。到 0（完全关闭）时把 sheetContent 卸载——挂载/卸载与进度落定原子绑定：
     // 只有关闭动画“真正跑完”这一行才执行，被拖拽取消则抛 CancellationException、这行不会跑，绝不会
-    // 在动画途中把列表卸掉。
+    // 在动画途中把内容卸掉。
     // velocityPxPerSec 是松手瞬间的竖直速度（向上为负），换算成进度/秒（-v/行程，向上=进度增大=正）
     // 传给 animate 作初速度，让"甩"的动量接进吸附动画里——不传就是从静止弹起，手感发肉、不跟手。
     fun animateSheetTo(target: Float, velocityPxPerSec: Float = 0f) {
@@ -324,7 +322,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                 initialVelocity = initialVelocity,
                 animationSpec = SheetAnimationSpec
             ) { value, _ -> sheetProgress = value }
-            if (target <= 0f) selectedAlbum = null
+            if (target <= 0f) sheetContent = null
         }
     }
 
@@ -402,14 +400,14 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     // 动画就结束了"。以 lambda 形式提供，供底栏的 offset/graphicsLayer 延迟块每帧读取，只重新放置/
     // 合成、不重排(relayout)，消除"顿挫感"。没有 sheet 挂载时返回 0（导航栏完整显示），与挂载态原子。
     val bottomBarSlideFraction: () -> Float = {
-        if (selectedAlbum == null) 0f else sheetProgress
+        if (sheetContent == null) 0f else sheetProgress
     }
 
     // sheet 是否已完全打开。用 derivedStateOf，只在跨过阈值那一刻通知读者、不会每帧重组。
-    // 传给 AlbumDetailScreen 作 active：只有真正打开后才发起网络刷新，避免"上拉一点又松开"的
-    // 瞬时挂载也请求、失败反复弹 "无法获取最新数据" toast。
+    // 传给 AlbumDetailScreen/FavoritesScreen/SearchScreen 作 active：只有真正打开后才发起网络
+    // 刷新，避免"上拉一点又松开"的瞬时挂载也请求、失败反复弹 "无法获取最新数据" toast。
     val sheetFullyOpen by remember {
-        derivedStateOf { selectedAlbum != null && sheetProgress >= 0.999f }
+        derivedStateOf { sheetContent != null && sheetProgress >= 0.999f }
     }
 
     // 常驻底栏（迷你播放条 + 3-tab 导航栏）的可见性：导航栏只在首页（Tabs 且没有打开子表单）
@@ -420,7 +418,6 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     val playerVisible = when (screen) {
         is AppScreen.Edit -> false
         is AppScreen.Tabs -> !tabFormOpen
-        else -> true
     }
 
     // 底部常驻栏各部分的固定高度（不随导航栏收起动画变化，避免列表逐帧重排）
@@ -546,15 +543,9 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
             AnimatedContent(
                 targetState = screen,
                 transitionSpec = {
-                    val homeToSheet = initialState is AppScreen.Tabs && targetState.isSheet()
-                    val sheetToHome = initialState.isSheet() && targetState is AppScreen.Tabs
                     val targetDepth = targetState.depth()
                     val initialDepth = initialState.depth()
                     when {
-                        homeToSheet -> (slideUpEnter() togetherWith fadeOut(tween(MotionSpec.medium)))
-                            .apply { targetContentZIndex = 1f }
-                        sheetToHome -> (fadeIn(tween(MotionSpec.medium)) togetherWith slideDownExit())
-                            .apply { targetContentZIndex = 0f }
                         targetDepth > initialDepth -> forwardPush()
                         targetDepth < initialDepth -> reversePush()
                         else -> fadeThrough()
@@ -594,31 +585,14 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                                     context,
                                     updatedAlbums
                                 )
-                                // Update selected album if it's the same one
-                                if (selectedAlbum == target.album) {
-                                    selectedAlbum = updatedAlbum
+                                // Update the sheet's mounted content too, if it's showing this same album.
+                                val currentSheet = sheetContent
+                                if (currentSheet is SheetContent.AlbumDetail && currentSheet.album == target.album) {
+                                    sheetContent = SheetContent.AlbumDetail(updatedAlbum)
                                 }
                                 editingAlbum = null
                             },
                             editingAlbum = target.album
-                        )
-                    }
-
-                    AppScreen.Favorites -> {
-                        FavoritesScreen(
-                            onBack = { showFavorites = false },
-                            playlistController = playlistController,
-                            modifier = Modifier.fillMaxSize(),
-                            bottomInset = contentBottomInset
-                        )
-                    }
-
-                    AppScreen.Search -> {
-                        SearchScreen(
-                            onBack = { showSearch = false },
-                            playlistController = playlistController,
-                            modifier = Modifier.fillMaxSize(),
-                            bottomInset = contentBottomInset
                         )
                     }
 
@@ -630,7 +604,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                             },
                             onSelectAlbum = { album ->
                                 // 网格点击 / 非居中碟点击：挂载 sheet 内容并动画到完全打开。
-                                selectedAlbum = album
+                                sheetContent = SheetContent.AlbumDetail(album)
                                 animateSheetTo(1f)
                             },
                             onCreateAlbum = { album, serverConfigId ->
@@ -644,8 +618,14 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                                 albums = updated
                                 tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updated)
                             },
-                            onOpenFavorites = { showFavorites = true },
-                            onOpenSearch = { showSearch = true },
+                            onOpenFavorites = {
+                                sheetContent = SheetContent.Favorites
+                                animateSheetTo(1f)
+                            },
+                            onOpenSearch = {
+                                sheetContent = SheetContent.Search
+                                animateSheetTo(1f)
+                            },
                             playlistController = playlistController,
                             modifier = Modifier.fillMaxSize(),
                             selectedTabIndex = selectedTabIndex,
@@ -653,9 +633,13 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                             bottomInset = homeBottomInset,
                             carouselPage = carouselPage,
                             onCarouselPageChange = { carouselPage = it },
-                            onSheetDragStart = { album ->
-                                // 轮播上拖：挂载 sheet，随后每帧由 onSheetDrag 手指跟随驱动 sheetProgress。
-                                selectedAlbum = album
+                            onAlbumSheetDragStart = { album ->
+                                // 轮播上拖专辑：挂载 sheet，随后每帧由 onSheetDrag 手指跟随驱动 sheetProgress。
+                                sheetContent = SheetContent.AlbumDetail(album)
+                            },
+                            onFavoritesSheetDragStart = {
+                                // 轮播上拖收藏夹：与专辑走同一条手指跟随通道。
+                                sheetContent = SheetContent.Favorites
                             },
                             // dy 为每帧竖直位移（向上为负）；向上 = 上抬 = 更打开，故取 -dy 作上抬像素。
                             onSheetDrag = { dy -> dragSheetByRisePx(-dy) },
@@ -666,35 +650,61 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                 }
             }
 
-            // 专辑详情：手指跟随 sheet，叠在 AnimatedContent 之上、NowPlaying 之下。selectedAlbum
-            // 负责挂载/卸载这块内容；sheetProgress 驱动它的竖直位置（位移 = (1-progress)*行程）。
-            // 位移写在 offset{} 延迟 lambda 里，sheetProgress 变化只重新放置、不重组本函数。
-            val sheetAlbum = selectedAlbum
-            if (sheetAlbum != null) {
+            // 专辑详情/收藏夹/搜索：手指跟随 sheet，叠在 AnimatedContent 之上、NowPlaying 之下。
+            // sheetContent 负责挂载/卸载这块内容（三种内容互斥、共用同一套开合机制）；sheetProgress
+            // 驱动它的竖直位置（位移 = (1-progress)*行程）。位移写在 offset{} 延迟 lambda 里，
+            // sheetProgress 变化只重新放置、不重组本函数。
+            val currentSheetContent = sheetContent
+            if (currentSheetContent != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .offset { IntOffset(0, ((1f - sheetProgress) * sheetTravelPx()).roundToInt()) }
                         .nestedScroll(sheetNestedScroll)
                 ) {
-                    // AlbumDetailScreen 内部 currentAlbumSongs/hasTriedInitialRefresh 等状态是
-                    // 无 key 的 remember；sheet 在同一组合位置切换不同专辑时若不加 key，会复用
-                    // 旧实例、残留上一个专辑的歌曲列表（hasTriedInitialRefresh 已为 true 导致跳过
-                    // 重新加载）。按 album.id 包一层 key()，换专辑时整棵子树连同其 remember 状态
-                    // 一起重建，强制重新加载。
-                    androidx.compose.runtime.key(sheetAlbum.id) {
-                        AlbumDetailScreen(
-                            album = sheetAlbum,
-                            onBack = { animateSheetTo(0f) },
-                            onEdit = { album -> editingAlbum = album },
-                            playlistController = playlistController,
-                            modifier = Modifier.fillMaxSize(),
-                            // 播放条随 sheet 打开常驻在详情底部可见（只有导航栏收起），所以详情列表要为
-                            // 播放条预留高度，否则最后一首会被播放条挡住。
-                            bottomInset = contentBottomInset,
-                            // 只有 sheet 完全打开后才拉取最新数据——上拉一点又松开(退回)不会触发网络请求。
-                            active = sheetFullyOpen
-                        )
+                    when (currentSheetContent) {
+                        is SheetContent.AlbumDetail -> {
+                            // AlbumDetailScreen 内部 currentAlbumSongs/hasTriedInitialRefresh 等状态是
+                            // 无 key 的 remember；sheet 在同一组合位置切换不同专辑时若不加 key，会复用
+                            // 旧实例、残留上一个专辑的歌曲列表（hasTriedInitialRefresh 已为 true 导致跳过
+                            // 重新加载）。按 album.id 包一层 key()，换专辑时整棵子树连同其 remember 状态
+                            // 一起重建，强制重新加载。
+                            androidx.compose.runtime.key(currentSheetContent.album.id) {
+                                AlbumDetailScreen(
+                                    album = currentSheetContent.album,
+                                    onBack = { animateSheetTo(0f) },
+                                    onEdit = { album -> editingAlbum = album },
+                                    playlistController = playlistController,
+                                    modifier = Modifier.fillMaxSize(),
+                                    // 播放条随 sheet 打开常驻在详情底部可见（只有导航栏收起），所以详情
+                                    // 列表要为播放条预留高度，否则最后一首会被播放条挡住。
+                                    bottomInset = contentBottomInset,
+                                    // 只有 sheet 完全打开后才拉取最新数据——上拉一点又松开(退回)不会触发
+                                    // 网络请求。
+                                    active = sheetFullyOpen
+                                )
+                            }
+                        }
+
+                        SheetContent.Favorites -> {
+                            FavoritesScreen(
+                                onBack = { animateSheetTo(0f) },
+                                playlistController = playlistController,
+                                modifier = Modifier.fillMaxSize(),
+                                bottomInset = contentBottomInset,
+                                active = sheetFullyOpen
+                            )
+                        }
+
+                        SheetContent.Search -> {
+                            SearchScreen(
+                                onBack = { animateSheetTo(0f) },
+                                playlistController = playlistController,
+                                modifier = Modifier.fillMaxSize(),
+                                bottomInset = contentBottomInset,
+                                active = sheetFullyOpen
+                            )
+                        }
                     }
                     // sheet 顶部很细的拖拽横线（抓手）：贴在 sheet 顶边，拖拽/半开时可见，接近完全展开时
                     // 淡出，避免遮挡顶栏。alpha 在 graphicsLayer 里读 sheetProgress，逐帧只合成、不重组。
@@ -774,7 +784,8 @@ fun MainTabScreen(
     bottomInset: Dp,
     carouselPage: Int = -1,
     onCarouselPageChange: (Int) -> Unit = {},
-    onSheetDragStart: (tech.xvanturing.musicdav.data.Album) -> Unit = {},
+    onAlbumSheetDragStart: (tech.xvanturing.musicdav.data.Album) -> Unit = {},
+    onFavoritesSheetDragStart: () -> Unit = {},
     onSheetDrag: (Float) -> Unit = {},
     onSheetDragEnd: (Float) -> Unit = {}
 ) {
@@ -931,7 +942,8 @@ fun MainTabScreen(
                                     },
                                     carouselPage = carouselPage,
                                     onCarouselPageChange = onCarouselPageChange,
-                                    onSheetDragStart = onSheetDragStart,
+                                    onAlbumSheetDragStart = onAlbumSheetDragStart,
+                                    onFavoritesSheetDragStart = onFavoritesSheetDragStart,
                                     onSheetDrag = onSheetDrag,
                                     onSheetDragEnd = onSheetDragEnd
                                 )
