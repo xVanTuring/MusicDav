@@ -15,13 +15,18 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import tech.xvanturing.musicdav.SimpleMusicService
+import tech.xvanturing.musicdav.data.AlbumsRepository
 import tech.xvanturing.musicdav.data.CachedMetadata
 import tech.xvanturing.musicdav.data.MusicFile
 import tech.xvanturing.musicdav.data.MusicMetadataCache
+import tech.xvanturing.musicdav.data.PlaylistCache
 import tech.xvanturing.musicdav.data.PlaylistState
 import tech.xvanturing.musicdav.data.PlayMode
+import tech.xvanturing.musicdav.data.ServerAddressResolver
+import tech.xvanturing.musicdav.data.ServerConfigRepository
 import tech.xvanturing.musicdav.data.WebDavConfig
 import tech.xvanturing.musicdav.data.cacheKey
+import tech.xvanturing.musicdav.data.resolveAlbumUrl
 import tech.xvanturing.musicdav.MusicCacheService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -392,10 +397,19 @@ class PlaylistStateController {
                     if (uri != null) {
                         // 从 URL 推断文件名
                         val fileName = uri.substringAfterLast('/')
+                        // customCacheKey 是 setPlaylistAndPlay 里写入的 song.cacheKey，形如
+                        // "serverConfigId::path"（无关联服务器时就是 url）。解析回来恢复稳定缓存
+                        // 身份，否则重建出的 MusicFile 的 cacheKey 退化成 url，封面/元数据缓存全部查不到
+                        val customKey = mediaItem.localConfiguration?.customCacheKey
+                        val serverConfigId = customKey
+                            ?.takeIf { it.contains("::") }
+                            ?.substringBefore("::")
+                        val path = if (serverConfigId != null) customKey!!.substringAfter("::") else ""
                         val musicFile = MusicFile(
                             name = if (title != "Unknown") title else fileName,
                             url = uri,
-                            path = ""
+                            path = path,
+                            serverConfigId = serverConfigId
                         )
                         syncedSongs.add(musicFile)
                     }
@@ -407,6 +421,7 @@ class PlaylistStateController {
                         "PlaylistStateController",
                         "Synced ${syncedSongs.size} songs from MediaController"
                     )
+                    restorePlaybackContext(syncedSongs)
                 }
             } else if (mediaItemCount > 0 && state.songs.isNotEmpty()) {
                 // 如果都有内容，检查是否需要同步当前索引
@@ -421,6 +436,63 @@ class PlaylistStateController {
                 "Error syncing playlist from MediaController: ${error.message}",
                 error
             )
+        }
+    }
+
+    // Activity 被系统回收重建（挂后台一段时间、旋转等）后 remember 的本控制器是全新实例：
+    // MediaController 只能还原 url 列表，封面映射/元数据/专辑上下文都随旧实例丢了，表现为
+    // 底部播放条只剩占位图标和文件名。这里从本地缓存把它们恢复回来：元数据缓存恢复标题、
+    // CoverCache 恢复内嵌封面，再反查哪个专辑的缓存列表包含这些歌，恢复专辑封面兜底、
+    // WebDAV 配置（http 封面加载要鉴权）和 currentAlbumId（首页胶片高亮）。
+    private fun restorePlaybackContext(syncedSongs: List<MusicFile>) {
+        val ctx = context ?: return
+        CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                // 1) 元数据缓存 → 标题/艺人/时长（displayName 恢复成正经标题而不是 URL 文件名）
+                val metaMap = MusicMetadataCache.getBatch(ctx, syncedSongs.map { it.cacheKey })
+                if (metaMap.isNotEmpty()) {
+                    val enriched = _state.value.songs.map { song ->
+                        metaMap[song.cacheKey]?.let { meta ->
+                            song.copy(
+                                title = meta.title,
+                                artist = meta.artist,
+                                album = meta.album,
+                                durationMs = meta.durationMs
+                            )
+                        } ?: song
+                    }
+                    _state.value = _state.value.copy(songs = enriched)
+                }
+
+                // 2) 内嵌封面本地缓存（currentCoverUrl 优先级 1）
+                loadCachedCovers(ctx, syncedSongs)
+
+                // 3) 反查所属专辑：恢复专辑封面兜底、鉴权配置、专辑 id
+                val urls = syncedSongs.map { it.url }.toSet()
+                val album = AlbumsRepository.load(ctx).firstOrNull { album ->
+                    PlaylistCache.load(ctx, album.id).any { it.url in urls }
+                } ?: return@launch
+                val serverConfig = album.serverConfigId
+                    ?.let { id -> ServerConfigRepository.load(ctx).find { it.id == id } }
+                val config = if (serverConfig != null) {
+                    serverConfig.toWebDavConfig(ServerAddressResolver.resolve(serverConfig))
+                } else {
+                    album.config
+                }
+                val coverUrl = resolveAlbumUrl(album.coverImageUrl, config.url)
+                setSongAlbumCovers(syncedSongs, coverUrl)
+                _state.value = _state.value.copy(
+                    currentWebDavConfig = config,
+                    currentAlbumId = album.id
+                )
+                setCredentials(config)
+                Log.d(
+                    "PlaylistStateController",
+                    "Restored playback context from album ${album.name}"
+                )
+            } catch (e: Exception) {
+                Log.e("PlaylistStateController", "Failed to restore playback context", e)
+            }
         }
     }
 
