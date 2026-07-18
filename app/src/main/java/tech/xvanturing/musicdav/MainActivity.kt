@@ -662,8 +662,15 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
             // sheetContent 负责挂载/卸载这块内容（三种内容互斥、共用同一套开合机制）；sheetProgress
             // 驱动它的竖直位置（位移 = (1-progress)*行程）。位移写在 offset{} 延迟 lambda 里，
             // sheetProgress 变化只重新放置、不重组本函数。
+            // 编辑表单(AppScreen.Edit)在 AnimatedContent 里、层级在本 sheet 之下——从详情点编辑时
+            // 必须把 sheet 淡出让开，否则表单被 sheet 盖住看不见；编辑退出后淡回，详情还在原地。
             val currentSheetContent = sheetContent
             if (currentSheetContent != null) {
+                AnimatedVisibility(
+                    visible = screen is AppScreen.Tabs,
+                    enter = fadeIn(tween(200)),
+                    exit = fadeOut(tween(120))
+                ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -734,6 +741,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.onSurfaceVariant)
                     )
+                }
                 }
             }
             }

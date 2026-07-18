@@ -31,6 +31,16 @@ import tech.xvanturing.musicdav.player.PlaylistStateController
 import tech.xvanturing.musicdav.ui.MusicListScreen
 import tech.xvanturing.musicdav.ui.components.AppTopBar
 import tech.xvanturing.musicdav.ui.components.sheetTopBarDrag
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+// 已解析收藏列表的进程内缓存：sheet 每次完全开合都会卸载重建本组件、remember 状态清零，没有
+// 这层缓存时每次打开都要等 sheet 全开→重新解析→转圈。首次解析后存这里，之后挂载即显示；
+// active 后仍会重新解析一遍静默更新（收藏增减/服务器地址变化都能跟上），只是不再转圈。
+private object FavoritesSessionCache {
+    var songs: List<MusicFile>? = null
+    var configs: Map<String, WebDavConfig> = emptyMap()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,20 +60,25 @@ fun FavoritesScreen(
     val coroutineScope = rememberCoroutineScope()
     val cacheManager = remember { CacheManager(context) }
 
-    var songs by remember { mutableStateOf<List<MusicFile>>(emptyList()) }
-    var songConfigs by remember { mutableStateOf<Map<String, WebDavConfig>>(emptyMap()) }
-    var isLoading by remember { mutableStateOf(true) }
+    // 挂载即用会话缓存填充：上拉过程中就能看到列表，不用等全开、不转圈（首次除外）
+    var songs by remember { mutableStateOf(FavoritesSessionCache.songs ?: emptyList()) }
+    var songConfigs by remember { mutableStateOf(FavoritesSessionCache.configs) }
+    var isLoading by remember { mutableStateOf(FavoritesSessionCache.songs == null) }
     var refreshKey by remember { mutableIntStateOf(0) }
 
     BackHandler { onBack() }
 
     LaunchedEffect(refreshKey, active) {
         if (!active) return@LaunchedEffect
-        isLoading = true
-        val favorites = FavoritesRepository.load(context)
-        val resolved = favorites.mapNotNull { it.resolvePlayable(context) }
+        // 只有本进程从没解析过（无缓存可显示）才转圈；有缓存时静默刷新
+        if (FavoritesSessionCache.songs == null) isLoading = true
+        val resolved = withContext(Dispatchers.IO) {
+            FavoritesRepository.load(context).mapNotNull { it.resolvePlayable(context) }
+        }
         songs = resolved.map { it.first }
         songConfigs = resolved.associate { it.first.url to it.second }
+        FavoritesSessionCache.songs = songs
+        FavoritesSessionCache.configs = songConfigs
         playlistController.setSongConfigs(songConfigs)
         playlistController.loadCachedCovers(context, songs)
         isLoading = false
