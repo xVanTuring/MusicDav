@@ -1047,7 +1047,10 @@ private fun CarouselHomeContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(bottom = bottomInset)
+            // 手势检测必须在 padding **之前**：否则 pointerInput 的命中区被 bottom inset 挡掉，
+            // 底部那条(页码圆点与播放条之间的预留区)就成了上拉死区、拖不动 sheet。放到 padding 外面
+            // 让手势覆盖整列；播放条/导航栏是 Scaffold 的 bottomBar 画在最上层，各自的点击照常先被它们
+            // 接走，只有空白处的拖拽才落到这里。
             .pointerInput(entries) {
                 // 上滑：若居中的是专辑，从第一次越过 touch-slop 判明方向起，把之后每一帧的位移
                 // 实时喂给详情 sheet（手指跟随，见 onSheetDragStart/onSheetDrag），松手时把
@@ -1101,7 +1104,9 @@ private fun CarouselHomeContent(
                         change.consume()
                     }
                 )
-            },
+            }
+            // padding 放到手势之后(内侧)：内容仍被 inset 顶到底栏之上，但上拉手势覆盖整列、无死区。
+            .padding(bottom = bottomInset),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         HorizontalPager(
