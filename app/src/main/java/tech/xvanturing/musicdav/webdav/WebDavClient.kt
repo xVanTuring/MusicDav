@@ -11,6 +11,7 @@ import tech.xvanturing.musicdav.player.CoverCache
 import com.thegrizzlylabs.sardineandroid.DavResource
 import com.thegrizzlylabs.sardineandroid.Sardine
 import com.thegrizzlylabs.sardineandroid.impl.OkHttpSardine
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -99,6 +100,9 @@ class WebDavClient {
             }
 
             Result.success(enrichedMusicFiles)
+        } catch (e: CancellationException) {
+            // 协程取消不是拉取失败，向上传播，别包进 Result 害调用方当网络错误弹提示
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }

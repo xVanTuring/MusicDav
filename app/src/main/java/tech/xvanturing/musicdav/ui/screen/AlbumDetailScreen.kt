@@ -23,7 +23,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -43,14 +45,32 @@ import tech.xvanturing.musicdav.player.PlaylistStateController
 import tech.xvanturing.musicdav.player.CacheManager
 import tech.xvanturing.musicdav.ui.MusicListScreen
 import tech.xvanturing.musicdav.ui.components.AppTopBar
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import tech.xvanturing.musicdav.data.MusicFile
 import tech.xvanturing.musicdav.data.PlaylistCache
 import tech.xvanturing.musicdav.data.MusicMetadataCache
 import tech.xvanturing.musicdav.data.cacheKey
 import tech.xvanturing.musicdav.webdav.WebDavClient
+
+// "无法获取最新数据"toast 的按专辑节流。sheet 完全关闭会卸载本组件、remember 状态清零，
+// 反复完全开合 = 每次都重新拉取，离线时每个来回都会弹一次 toast；节流状态必须活在组件外
+// 才能跨挂载去重。
+private object FetchFailedToastThrottle {
+    private const val INTERVAL_MS = 10_000L
+    private val lastShownAt = mutableMapOf<String, Long>()
+
+    fun shouldShow(albumId: String): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val last = lastShownAt[albumId]
+        if (last != null && now - last < INTERVAL_MS) return false
+        lastShownAt[albumId] = now
+        return true
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -157,11 +177,16 @@ fun AlbumDetailScreen(
         }
     }
 
-    // 2) 拉取最新数据：只有 sheet 真正打开(active)后才做一次。避免"上拉一点又松开"的瞬时挂载也发起
-    //    网络请求、失败反复弹"无法获取最新数据"toast。onFailure/catch 里用 currentAlbumSongs 判断
-    //    是否已有缓存(由上面的效果填好)。
-    LaunchedEffect(album.id, forceRefreshKey, active) {
-        if (active && !hasTriedInitialRefresh) {
+    // 2) 拉取最新数据：等 sheet 首次真正打开(active)后做一次。等待用 snapshotFlow 而不是把 active
+    //    放进 LaunchedEffect 的 key——否则打开后往下拖一点让 active 翻回 false 就会重启效果、取消
+    //    正在跑的请求，CancellationException 被下面的 catch 当成网络失败弹 toast（"反复上拉下拉
+    //    就弹提示"的根源）。拉取一旦开始就跑到底，中途拖拽不打断；只有 sheet 完全关闭卸载本组件
+    //    才取消，取消不弹 toast。失败 toast 另有 FetchFailedToastThrottle 跨挂载节流，离线时反复
+    //    完全开合也不会每次都弹。
+    val currentActive = rememberUpdatedState(active)
+    LaunchedEffect(album.id, forceRefreshKey) {
+        snapshotFlow { currentActive.value }.first { it }
+        if (!hasTriedInitialRefresh) {
             hasTriedInitialRefresh = true
             try {
                 // 尝试获取最新数据并提取元数据
@@ -206,8 +231,10 @@ fun AlbumDetailScreen(
                         metadataExtractionProgress = null
                     }
                     .onFailure { e ->
-                        // 如果已经有缓存数据，显示提示
-                        if (currentAlbumSongs.isNotEmpty()) {
+                        // 协程取消(卸载)会被 fetchMusicFiles 内部包进 Result.failure，不是网络失败
+                        if (e !is CancellationException && currentAlbumSongs.isNotEmpty() &&
+                            FetchFailedToastThrottle.shouldShow(album.id)
+                        ) {
                             Toast.makeText(
                                 context,
                                 context.getString(R.string.album_toast_fetch_failed_use_cache),
@@ -217,9 +244,11 @@ fun AlbumDetailScreen(
                         isExtractingMetadata = false
                         metadataExtractionProgress = null
                     }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // 如果已经有缓存数据，显示提示
-                if (currentAlbumSongs.isNotEmpty()) {
+                if (currentAlbumSongs.isNotEmpty() && FetchFailedToastThrottle.shouldShow(album.id)) {
                     Toast.makeText(
                         context,
                         context.getString(R.string.album_toast_fetch_failed_use_cache),
