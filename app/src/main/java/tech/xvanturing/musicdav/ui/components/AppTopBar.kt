@@ -8,13 +8,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import tech.xvanturing.musicdav.R
 
 /**
@@ -39,7 +39,9 @@ fun AppTopBar(
             Text(
                 text = title,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                // 长专辑名滚动展示而不是截成 "..."：截断后完全看不出是哪张专辑。
+                // basicMarquee 只在文字真的放不下时才滚，短标题保持静止。
+                modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                 style = MaterialTheme.typography.titleLarge
             )
         },

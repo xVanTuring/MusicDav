@@ -89,6 +89,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -145,6 +146,37 @@ private fun loadHomeViewMode(context: Context): HomeViewMode {
 private fun saveHomeViewMode(context: Context, mode: HomeViewMode) {
     context.getSharedPreferences(UI_PREFS_NAME, Context.MODE_PRIVATE)
         .edit { putString(KEY_HOME_VIEW_MODE, mode.name) }
+}
+
+/**
+ * 轮播里"上拉出 sheet"与"横滑翻页"的方向仲裁容差：竖向位移只要不小于横向的 1/[VERTICAL_BIAS]
+ * 就算上拉。越大越容易判成上拉。2f ≈ 允许偏离竖直 63°，覆盖正常人斜着往上甩的角度。
+ */
+private const val VERTICAL_BIAS = 2f
+
+/**
+ * 导出落盘日志并拉起系统分享面板（见 [tech.xvanturing.musicdav.util.LogExport]）。
+ * 用于把"后台播放偶发失败"的现场发出来——那种问题现连电脑抓 logcat 早就来不及了。
+ */
+private fun exportLog(context: Context) {
+    try {
+        val file = tech.xvanturing.musicdav.util.LogExport.writeExportFile(context)
+        if (file == null) {
+            android.widget.Toast.makeText(
+                context,
+                context.getString(R.string.toast_log_empty),
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        context.startActivity(tech.xvanturing.musicdav.util.LogExport.shareIntent(context, file))
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(
+            context,
+            context.getString(R.string.toast_log_export_failed, e.message ?: ""),
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+    }
 }
 
 // Unified list of "pages"/cells shown on the home screen: Favorites first, then every album.
@@ -439,6 +471,43 @@ fun AlbumListScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(stringResource(R.string.ie_import))
+                                }
+
+                                androidx.compose.material3.HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 12.dp)
+                                )
+                                Text(
+                                    text = stringResource(R.string.settings_export_log_desc),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            showMenuDialog = false
+                                            exportLog(context)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(stringResource(R.string.settings_export_log))
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            showMenuDialog = false
+                                            tech.xvanturing.musicdav.util.AppLog.clear(context)
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                context.getString(R.string.toast_log_cleared),
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    ) {
+                                        Text(stringResource(R.string.settings_clear_log))
+                                    }
                                 }
                             }
                         },
@@ -905,7 +974,9 @@ fun AlbumGridItem(
             }
         }
 
-        // 专辑名显示在封面下面，靠左对齐
+        // 专辑名显示在封面下面，靠左对齐。这里保持两行截断而不是跑马灯：网格一屏十几个单元，
+        // 全都滚起来太吵（同样的理由，歌曲列表也只让"正在播放"那一行滚）。需要看全名时进详情，
+        // 顶栏标题是滚动的。
         Text(
             text = album.name,
             style = MaterialTheme.typography.titleSmall,
@@ -1097,10 +1168,13 @@ private fun CarouselHomeContent(
                                 accX += delta.x
                                 accY += delta.y
                                 when {
-                                    // 横向占优：让给 pager 翻页，本手势退出观察
-                                    abs(accX) > slop && abs(accX) > abs(accY) -> break
-                                    // 竖向越过 slop 且向上：接管
-                                    abs(accY) > slop && accY < 0f -> {
+                                    // ① 竖向优先判定：越过 slop、方向向上、且横向没有明显压过竖向 → 接管。
+                                    // 旧写法把"横向占优"排在前面、判据还是 |accX| > |accY|：快速斜向上甩
+                                    // 的第一帧位移很大，横向只要多出几个像素就直接 break、整段手势作废，
+                                    // 必须重来——这就是"很容易不展开、要连滑好几次"的主因。现在给竖向留
+                                    // 出 VERTICAL_BIAS 倍的容差，正常人上滑那点横向抖动不再判死。
+                                    abs(accY) > slop && accY < 0f &&
+                                        abs(accX) < abs(accY) * VERTICAL_BIAS -> {
                                         claimed = true
                                         sheetDragging = true
                                         val list = currentEntries
@@ -1112,6 +1186,8 @@ private fun CarouselHomeContent(
                                         onSheetDrag(accY + slop)
                                         change.consume()
                                     }
+                                    // ② 横向明显占优才让给 pager 翻页，本手势退出观察
+                                    abs(accX) > slop && abs(accX) >= abs(accY) * VERTICAL_BIAS -> break
                                 }
                             } else {
                                 onSheetDrag(delta.y)
@@ -1241,11 +1317,12 @@ private fun CarouselHomeContent(
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 32.dp, vertical = 4.dp)
+                // 长专辑名滚动展示；放不下才滚，短名字保持居中静止
+                .basicMarquee(iterations = Int.MAX_VALUE)
         )
         Text(
             text = stringResource(R.string.common_song_count, songCount),

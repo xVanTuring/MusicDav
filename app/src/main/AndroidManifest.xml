@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH" />
 
     <application
+        android:name=".MusicDavApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -46,6 +47,17 @@
             android:name=".MusicCacheService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- 日志导出：把 cacheDir/exports 下的文本文件授权给分享目标读取，免存储权限 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

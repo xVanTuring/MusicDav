@@ -53,6 +53,10 @@ class PlaylistStateController {
     fun setCredentials(webDavConfig: WebDavConfig) {
         val credentials = Pair(webDavConfig.username, webDavConfig.password)
 
+        // 无论是否变化都登记进 WebDavAuthStore：播放器是按歌曲 URL 现查鉴权头的（见 CachedDataSource），
+        // 只有登记过这台服务器，跨服务器列表预加载下一首时才不会拿着上一首的凭据去请求。
+        WebDavAuthStore.register(webDavConfig.url, webDavConfig.username, webDavConfig.password)
+
         // 只有在凭据真的改变了时才调用 Service
         if (lastCredentials != credentials) {
             lastCredentials = credentials
@@ -97,6 +101,10 @@ class PlaylistStateController {
         val merged = _state.value.songToConfigMap.toMutableMap()
         merged.putAll(configs)
         _state.value = _state.value.copy(songToConfigMap = merged)
+        // 跨服务器列表：把涉及到的每台服务器都登记好，ExoPlayer 预加载任意一首都能取到对的凭据
+        configs.values.distinctBy { it.url }.forEach {
+            WebDavAuthStore.register(it.url, it.username, it.password)
+        }
     }
 
     fun seekTo(positionMs: Long) {
@@ -132,7 +140,12 @@ class PlaylistStateController {
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
-                        Log.e("PlaylistStateController", "Player error: ${error.message}")
+                        tech.xvanturing.musicdav.util.AppLog.e(
+                            "PlaylistStateController",
+                            "控制器侧收到播放错误 code=${error.errorCodeName} index=${_state.value.currentIndex} " +
+                                "song=${_state.value.currentSong?.name}",
+                            error
+                        )
                     }
                     
 
@@ -532,8 +545,18 @@ class PlaylistStateController {
     }
 
     fun release() {
-        listenerRef.get()?.let { controller?.removeListener(it) }
-        controller?.release()
+        try {
+            listenerRef.get()?.let { controller?.removeListener(it) }
+            // 只在还连着的时候才 release：服务进程已经被系统杀掉时，media3 内部的 unbindService 会抛
+            // IllegalArgumentException("Service not registered")，而且是 post 到主线程 Handler 里抛的，
+            // 这里的 try/catch 根本接不住，整个进程直接崩（落盘日志里已经抓到过一次现场）。
+            // 连接已断就直接丢掉引用，绑定本来也随服务进程一起没了。
+            if (controller?.isConnected == true) controller?.release()
+        } catch (e: Exception) {
+            tech.xvanturing.musicdav.util.AppLog.w(
+                "PlaylistStateController", "释放 MediaController 失败", e
+            )
+        }
         controller = null
         isControllerReady = false
         lastCredentials = null

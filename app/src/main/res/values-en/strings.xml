@@ -194,4 +194,10 @@
     <string name="album_error_connection_failed">Connection failed: %1$s</string>
     <string name="album_clear_cover_title">Clear Cover Selection</string>
     <string name="album_clear_cover_message">Clear the selected cover image?</string>
+    <string name="settings_export_log">Export Logs</string>
+    <string name="settings_export_log_desc">Export and share playback/cache logs to diagnose background playback issues</string>
+    <string name="settings_clear_log">Clear Logs</string>
+    <string name="toast_log_empty">No logs to export yet</string>
+    <string name="toast_log_cleared">Logs cleared</string>
+    <string name="toast_log_export_failed">Log export failed: %1$s</string>
 </resources>

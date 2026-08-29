@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import tech.xvanturing.musicdav.util.AppLog
 import okhttp3.Credentials
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -28,7 +29,10 @@ data class CacheMetadata(
 object MusicCache {
     private const val CACHE_DIR = "music_cache"
     private const val MAX_CACHE_BYTES = 20L * 1024 * 1024 * 1024 // 2GB
-    
+
+    // 下载中的临时后缀。只有整段下完并核对过长度才改名成最终文件，播放侧因此永远看不到半截文件
+    private const val PART_SUFFIX = ".part"
+
     private val downloadMutex = Mutex()
     private val activeDownloads = mutableSetOf<String>()
     private val httpClient = OkHttpClient.Builder()
@@ -36,6 +40,21 @@ object MusicCache {
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
     
+    /**
+     * 清掉上次进程被杀时留下的 .part 残片。启动时扫一遍即可，不影响正在进行的下载
+     * （下载中的那份也叫 .part，但那时进程还活着、本函数只在冷启动跑一次）。
+     */
+    suspend fun cleanupPartFiles(context: Context) = withContext(Dispatchers.IO) {
+        try {
+            val stale = getCacheDir(context).listFiles { f -> f.name.endsWith(PART_SUFFIX) } ?: return@withContext
+            if (stale.isEmpty()) return@withContext
+            stale.forEach { it.delete() }
+            AppLog.i("MusicCache", "清理了 ${stale.size} 个上次未完成的下载残片")
+        } catch (e: Exception) {
+            AppLog.w("MusicCache", "清理下载残片失败", e)
+        }
+    }
+
     fun getCacheDir(context: Context): File {
         val cacheDir = File(context.cacheDir, CACHE_DIR)
         if (!cacheDir.exists()) {
@@ -61,15 +80,18 @@ object MusicCache {
             activeDownloads.add(key)
         }
 
+        // 下载先落到 .part，成功校验后才改名成最终文件（见 PART_SUFFIX 说明）
+        var partFile: File? = null
         try {
             val cacheDir = getCacheDir(context)
             val fileName = sha256(key) + getFileExtension(fetchUrl)
             val cacheFile = File(cacheDir, fileName)
 
-            if (cacheFile.exists()) {
+            val existing = validatedCacheFile(context, key, cacheFile)
+            if (existing != null) {
                 Log.d("MusicCache", "Song already cached: ${musicFile.name}")
                 CacheRepository.updateLastAccessTime(context, key)
-                return@withContext Result.success(cacheFile.absolutePath)
+                return@withContext Result.success(existing.absolutePath)
             }
 
             val cacheSize = getCurrentCacheSize(context)
@@ -85,26 +107,30 @@ object MusicCache {
                 .url(fetchUrl)
                 .header("Authorization", credentials)
                 .build()
-            
+
             val response = httpClient.newCall(request).execute()
             if (!response.isSuccessful) {
                 throw IOException("Unexpected response code: ${response.code}")
             }
-            
+
             val totalBytes = response.body.contentLength()
             val inputStream = response.body.byteStream()
-            
+
+            val part = File(cacheDir, fileName + PART_SUFFIX)
+            partFile = part
+            if (part.exists()) part.delete()
+
             var downloadedBytes = 0L
             var lastProgress = -1
-            
+
             inputStream.use { input ->
-                cacheFile.outputStream().use { output ->
+                part.outputStream().use { output ->
                     val buffer = ByteArray(8192)
                     var bytesRead: Int
                     while (input.read(buffer).also { bytesRead = it } != -1) {
                         output.write(buffer, 0, bytesRead)
                         downloadedBytes += bytesRead
-                        
+
                         if (totalBytes > 0) {
                             val progress = ((downloadedBytes * 100) / totalBytes).toInt()
                             if (progress != lastProgress) {
@@ -115,7 +141,19 @@ object MusicCache {
                     }
                 }
             }
-            
+
+            // 服务器给了长度就核对一遍：连接被中途掐断时 read 会正常返回 -1，
+            // 光看"循环结束了"根本分不清是下完了还是断了
+            if (totalBytes > 0 && downloadedBytes != totalBytes) {
+                throw IOException("下载不完整：$downloadedBytes/$totalBytes 字节")
+            }
+
+            if (cacheFile.exists()) cacheFile.delete()
+            if (!part.renameTo(cacheFile)) {
+                throw IOException("缓存文件改名失败：${part.name} -> ${cacheFile.name}")
+            }
+            partFile = null
+
             val metadata = CacheMetadata(
                 url = key,
                 fileName = fileName,
@@ -125,12 +163,14 @@ object MusicCache {
             )
             CacheRepository.saveMetadata(context, key, metadata)
 
-            Log.d("MusicCache", "Song cached successfully: ${musicFile.name}, size: ${cacheFile.length()}")
+            AppLog.i("MusicCache", "缓存完成 ${musicFile.name} ${cacheFile.length()} 字节")
             Result.success(cacheFile.absolutePath)
         } catch (e: Exception) {
-            Log.e("MusicCache", "Failed to cache song: ${musicFile.name}", e)
+            AppLog.e("MusicCache", "缓存失败 ${musicFile.name}", e)
             Result.failure(e)
         } finally {
+            // 失败/取消都要把半截的 .part 清掉，否则会一直占着缓存空间
+            partFile?.let { if (it.exists()) it.delete() }
             downloadMutex.withLock {
                 activeDownloads.remove(key)
             }
@@ -142,15 +182,40 @@ object MusicCache {
         val cacheDir = getCacheDir(context)
         val fileName = sha256(url) + getFileExtension(url)
         val cacheFile = File(cacheDir, fileName)
-        
-        if (cacheFile.exists()) {
+
+        val valid = validatedCacheFile(context, url, cacheFile)
+        if (valid != null) {
             CacheRepository.updateLastAccessTime(context, url)
             Log.d("MusicCache", "Cache hit for URL: ${url.takeLast(30)}")
-            return@withContext cacheFile.absolutePath
+            return@withContext valid.absolutePath
         }
-        
+
         Log.d("MusicCache", "Cache miss for URL: ${url.takeLast(30)}")
         null
+    }
+
+    /**
+     * 判定一个缓存文件是否**完整可播**，不完整就地清理掉并返回 null（回落网络）。
+     *
+     * 老实现把下载流直接写在最终路径上，中途断网/进程被杀就会留下一个"看起来已经缓存好"的半截
+     * 文件；之后每次播这首歌都会读它，表现为播到一半突然结束或直接解码失败——而且因为走的是本地
+     * 文件、连网络错误都不会报，就是"没有任何异常提示的播放失败"。判据是元数据里记的大小：
+     * 元数据只在下载**成功**后才写，所以"有文件没元数据"或"大小对不上"一律视为残缺。
+     */
+    private fun validatedCacheFile(context: Context, key: String, cacheFile: File): File? {
+        if (!cacheFile.exists()) return null
+        val metadata = CacheRepository.getMetadata(context, key)
+        val actualSize = cacheFile.length()
+        if (metadata == null || metadata.fileSize <= 0L || metadata.fileSize != actualSize) {
+            AppLog.w(
+                "MusicCache",
+                "缓存文件不完整，丢弃：${cacheFile.name} 实际=$actualSize 记录=${metadata?.fileSize}"
+            )
+            cacheFile.delete()
+            CacheRepository.removeMetadata(context, key)
+            return null
+        }
+        return cacheFile
     }
     
     suspend fun isCached(context: Context, url: String): Boolean = withContext(Dispatchers.IO) {

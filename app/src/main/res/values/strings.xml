@@ -205,4 +205,10 @@
     <string name="album_error_connection_failed">连接失败：%1$s</string>
     <string name="album_clear_cover_title">清除封面选择</string>
     <string name="album_clear_cover_message">确定要清除已选择的封面图片吗？</string>
+    <string name="settings_export_log">导出日志</string>
+    <string name="settings_export_log_desc">把播放/缓存日志导出并分享，用于排查后台播放异常</string>
+    <string name="settings_clear_log">清除日志</string>
+    <string name="toast_log_empty">暂无日志可导出</string>
+    <string name="toast_log_cleared">日志已清除</string>
+    <string name="toast_log_export_failed">日志导出失败：%1$s</string>
 </resources>

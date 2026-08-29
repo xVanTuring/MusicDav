@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 日志导出文件（LogExport 写到 cacheDir/exports），通过 FileProvider 授权给分享目标读取 -->
+    <cache-path name="exports" path="exports/" />
+</paths>

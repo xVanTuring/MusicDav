@@ -1,7 +1,7 @@
 package tech.xvanturing.musicdav.player
 
 import android.content.Context
-import android.util.Log
+import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
@@ -9,6 +9,7 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.TransferListener
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import tech.xvanturing.musicdav.util.AppLog
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
@@ -54,25 +55,36 @@ class CachedDataSource private constructor(
     private fun openCache(dataSpec: DataSpec, cachedPath: String): Long {
         val file = File(cachedPath)
         if (!file.exists()) {
-            Log.w("CachedDataSource", "Cached file not found: $cachedPath, falling back to network")
+            AppLog.w(TAG, "缓存文件不存在，回落网络: $cachedPath")
             return openNetwork(dataSpec)
         }
 
         try {
-            fileInputStream = FileInputStream(file)
-            val skipped = fileInputStream?.skip(dataSpec.position) ?: 0
+            val stream = FileInputStream(file)
+            fileInputStream = stream
+            // skip 不保证一次跳够，必须循环补齐；跳不够会读到错位的数据，
+            // 表现为 seek 之后一段噪音或直接解码失败
+            var toSkip = dataSpec.position
+            while (toSkip > 0) {
+                val skipped = stream.skip(toSkip)
+                if (skipped <= 0) throw IOException("无法定位到 ${dataSpec.position}（缓存文件已损坏？）")
+                toSkip -= skipped
+            }
 
-            bytesRemaining = if (dataSpec.length == -1L) {
+            bytesRemaining = if (dataSpec.length == C.LENGTH_UNSET.toLong()) {
                 file.length() - dataSpec.position
             } else {
                 dataSpec.length
             }
 
-            Log.d("CachedDataSource", "Opened cache file: ${file.name}, remaining: $bytesRemaining bytes")
+            AppLog.d(TAG, "命中缓存 ${file.name} 剩余 $bytesRemaining 字节")
             return bytesRemaining
         } catch (e: IOException) {
-            Log.e("CachedDataSource", "Failed to open cache file: $cachedPath", e)
-            fileInputStream?.close()
+            AppLog.e(TAG, "打开缓存文件失败，回落网络: $cachedPath", e)
+            try {
+                fileInputStream?.close()
+            } catch (_: IOException) {
+            }
             fileInputStream = null
             return openNetwork(dataSpec)
         }
@@ -84,16 +96,21 @@ class CachedDataSource private constructor(
             for (listener in listeners) {
                 httpDataSource?.addTransferListener(listener)
             }
-            val length = httpDataSource!!.open(dataSpec)
-            bytesRemaining = if (dataSpec.length == -1L) {
+            // 逐请求带上这首歌所属服务器的鉴权头。跨服务器列表（收藏夹/搜索）里 ExoPlayer 会
+            // 提前预加载下一首，此时全局默认头还停在上一首那台服务器上，不按 URL 现查就会 401。
+            val authorized = WebDavAuthStore.headerFor(dataSpec.uri.toString())
+                ?.let { dataSpec.withAdditionalHeaders(mapOf("Authorization" to it)) }
+                ?: dataSpec
+            val length = httpDataSource!!.open(authorized)
+            bytesRemaining = if (dataSpec.length == C.LENGTH_UNSET.toLong()) {
                 length
             } else {
                 dataSpec.length
             }
-            Log.d("CachedDataSource", "Opened network source: ${dataSpec.uri}, length: $length")
+            AppLog.d(TAG, "走网络 ${dataSpec.uri} length=$length pos=${dataSpec.position}")
             return length
         } catch (e: IOException) {
-            Log.e("CachedDataSource", "Failed to open network source: ${dataSpec.uri}", e)
+            AppLog.e(TAG, "网络打开失败 ${dataSpec.uri} pos=${dataSpec.position}", e)
             throw e
         }
     }
@@ -102,8 +119,14 @@ class CachedDataSource private constructor(
         if (bytesRemaining == 0L) {
             return -1
         }
+        if (readLength == 0) {
+            return 0
+        }
 
-        val bytesToRead = if (bytesRemaining < readLength) {
+        // 服务器没给 Content-Length 时 bytesRemaining 是 C.LENGTH_UNSET(-1)，
+        // 原来会算出 bytesToRead=-1 传给 read()，直接抛 IndexOutOfBounds。
+        // 长度未知就照请求长度读，由底层返回 -1 来标记结束。
+        val bytesToRead = if (bytesRemaining in 1 until readLength.toLong()) {
             bytesRemaining.toInt()
         } else {
             readLength
@@ -117,7 +140,9 @@ class CachedDataSource private constructor(
 
         if (bytesRead > 0) {
             this.bytesRead += bytesRead.toLong()
-            bytesRemaining -= bytesRead.toLong()
+            if (bytesRemaining != C.LENGTH_UNSET.toLong()) {
+                bytesRemaining -= bytesRead.toLong()
+            }
         }
 
         return bytesRead
@@ -132,14 +157,14 @@ class CachedDataSource private constructor(
             fileInputStream?.close()
             fileInputStream = null
         } catch (e: IOException) {
-            Log.e("CachedDataSource", "Error closing file input stream", e)
+            AppLog.w(TAG, "关闭缓存文件流失败", e)
         }
 
         try {
             httpDataSource?.close()
             httpDataSource = null
         } catch (e: IOException) {
-            Log.e("CachedDataSource", "Error closing http data source", e)
+            AppLog.w(TAG, "关闭网络数据源失败", e)
         }
 
         bytesRead = 0
@@ -165,5 +190,9 @@ class CachedDataSource private constructor(
         override fun createDataSource(): DataSource {
             return CachedDataSource(context, httpDataSourceFactory)
         }
+    }
+
+    private companion object {
+        const val TAG = "CachedDataSource"
     }
 }

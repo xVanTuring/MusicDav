@@ -57,6 +57,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -151,11 +152,25 @@ private val SheetAnimationSpec = spring<Float>(
     stiffness = Spring.StiffnessMediumLow
 )
 
-/** 松手速度（px/s）超过它就只按方向吸附，忽略当前进度是否过阈值。 */
-private const val SheetVelocityThreshold = 1000f
+/**
+ * 松手速度（px/s）超过它就只按方向吸附，忽略当前进度是否过阈值。
+ * 从 1000 降到 600：整段行程是接近整屏的高度，"轻轻一甩就开"才符合状态栏下拉那种手感，
+ * 1000 要求甩得相当猛，日常上拉经常达不到 → 反复上滑打不开。
+ */
+private const val SheetVelocityThreshold = 600f
 
-/** 松手速度不够时，按进度是否过这个比例决定吸附到打开(1)还是关闭(0)。 */
-private const val SheetPositionalThreshold = 0.4f
+/**
+ * 松手速度不够时的位置判定，**相对本次拖拽的起点**而不是绝对进度：从关着拉开，拉过这一比例的
+ * 行程就算开；从开着往下拖，同样拖过这一比例就算关。
+ *
+ * 旧写法是一个绝对阈值 0.4：从关着要拖过全屏 40% 才开（"很容易不展开"），而从开着往下拖到 39%
+ * 才关（下拉一大截仍弹回）。同一个数字对两个方向都别扭。改成相对起点后两边都只要 1/4 行程，
+ * 和状态栏下拉的手感一致。
+ */
+private const val SheetFlipThreshold = 0.25f
+
+/** 吸附动画注入的初速度上限（进度/秒）。5 ≈ 0.2 秒跑完整段行程，再快就只是视觉噪音了。 */
+private const val MaxSettleVelocity = 5f
 
 /**
  * Small fixed slide distance (in px), mirroring [tech.xvanturing.musicdav.ui.theme.forwardPush]'s
@@ -306,60 +321,156 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
     var sheetProgress by remember { mutableFloatStateOf(0f) }
     var sheetAnimJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
+    // 开合「意图」：true = 目标是打开。它和 sheetProgress 一起构成状态机的完整状态——
+    // 进度说"现在在哪"，意图说"要去哪"。卸载判定只认这两个（外加手指在不在），不再依赖
+    // "关闭动画有没有跑完"。旧写法把 sheetContent = null 挂在关闭动画的最后一行：动画一旦被
+    // 拖拽/嵌套滚动取消（反复上拉下拉时常发生），那行就永远不执行，于是 sheet 明明进度已经是 0、
+    // 内容却还挂着，屏幕外躺着一个不可见但活着的详情页——正是"多次操作后状态异常"的来源。
+    var sheetOpenTarget by remember { mutableStateOf(false) }
+
+    // 手指是否正按着驱动 sheet（轮播上拉 / 顶栏下拉 / 列表嵌套滚动）。拖拽途中即使进度归零也
+    // 不能卸载，否则手还没松内容就没了。
+    var sheetDragging by remember { mutableStateOf(false) }
+
+    // 本次拖拽起手时的进度。松手判定用"相对起点走了多远"而不是绝对进度，见 SheetFlipThreshold。
+    var sheetDragStartProgress by remember { mutableFloatStateOf(0f) }
+
+    // 手指驱动期间自己估算的开合速度（进度/秒，正 = 正在打开）。
+    // 为什么不用各手势回调传上来的 VelocityTracker 结果：顶栏下拉时，装着手势的节点自己也在跟着
+    // 手指位移，局部坐标系里"手指几乎没动"，算出来的速度恒为 0（实测日志里 endDrag v=0.0），
+    // 于是快速下滑甩不掉 sheet、只能靠位置判定。直接对 sheetProgress 求导最可靠——所有输入
+    // （轮播拖拽/顶栏下拉/列表嵌套滚动）最后都汇到这一个值上。
+    var sheetDragVelocity by remember { mutableFloatStateOf(0f) }
+    var sheetDragSampleTimeMs by remember { mutableLongStateOf(0L) }
+    var sheetDragSampleProgress by remember { mutableFloatStateOf(0f) }
+
     // sheet 从完全关闭到完全打开需要移动的距离（px）：关闭时 sheet 顶边正好贴在底栏顶部（被挡住），
     // 打开时到屏顶。sheetProgress=0 → 位移 = 这段行程；=1 → 位移 0。
     val sheetTravelPx: () -> Float =
         { (contentAreaHeightPx - bottomBarHeightPx).coerceAtLeast(0).toFloat() }
 
-    // ① 程序动画到某进度。到 0（完全关闭）时把 sheetContent 卸载——挂载/卸载与进度落定原子绑定：
-    // 只有关闭动画“真正跑完”这一行才执行，被拖拽取消则抛 CancellationException、这行不会跑，绝不会
-    // 在动画途中把内容卸掉。
+    // ① 程序动画到某进度（点击打开 / 返回关闭 / 松手吸附）。同时更新意图，卸载由下面统一的
+    // LaunchedEffect 判定，这里不再负责。
     // velocityPxPerSec 是松手瞬间的竖直速度（向上为负），换算成进度/秒（-v/行程，向上=进度增大=正）
     // 传给 animate 作初速度，让"甩"的动量接进吸附动画里——不传就是从静止弹起，手感发肉、不跟手。
     fun animateSheetTo(target: Float, velocityPxPerSec: Float = 0f) {
+        sheetOpenTarget = target > 0.5f
         sheetAnimJob?.cancel()
         val travel = sheetTravelPx()
-        val initialVelocity = if (travel > 0f) -velocityPxPerSec / travel else 0f
+        // 初速度限幅：甩得再猛也不让弹簧冲过头（进度算出界会把 sheet 顶到屏幕上方之外）
+        val initialVelocity = if (travel > 0f) {
+            (-velocityPxPerSec / travel).coerceIn(-MaxSettleVelocity, MaxSettleVelocity)
+        } else 0f
         sheetAnimJob = scope.launch {
             animate(
                 initialValue = sheetProgress,
                 targetValue = target,
                 initialVelocity = initialVelocity,
                 animationSpec = SheetAnimationSpec
-            ) { value, _ -> sheetProgress = value }
-            if (target <= 0f) sheetContent = null
+            ) { value, _ -> sheetProgress = value.coerceIn(0f, 1f) }
         }
     }
 
     // ② 手指拖拽：把「上抬的像素」换算成进度增量直接赋值（上抬为正 = 更打开）。先取消动画，确保
-    // 拖拽期间只有手指在驱动这个值，没有第二个驱动者。
+    // 拖拽期间只有手指在驱动这个值，没有第二个驱动者；顺便按时间采样出开合速度。
     fun dragSheetByRisePx(risePx: Float) {
         sheetAnimJob?.cancel()
         sheetAnimJob = null
         val travel = sheetTravelPx()
         if (travel <= 0f) return
-        sheetProgress = (sheetProgress + risePx / travel).coerceIn(0f, 1f)
+        val next = (sheetProgress + risePx / travel).coerceIn(0f, 1f)
+
+        val now = android.os.SystemClock.uptimeMillis()
+        val dt = now - sheetDragSampleTimeMs
+        sheetDragVelocity = when {
+            // 首帧或隔了太久（上一段手势的残留）：重新起算，不要拿旧样本外推
+            sheetDragSampleTimeMs == 0L || dt !in 1..120 -> 0f
+            // 轻度平滑，抹掉单帧抖动但保留甩出去的那一下
+            else -> sheetDragVelocity * 0.35f + ((next - sheetDragSampleProgress) / (dt / 1000f)) * 0.65f
+        }
+        sheetDragSampleTimeMs = now
+        sheetDragSampleProgress = next
+        sheetProgress = next
     }
 
-    // 松手吸附：速度够大只看方向，否则看进度是否过阈值，动画到打开(1)或关闭(0)。velocity 为 px/s，
-    // 向上为负。
+    /**
+     * 标记"手指开始驱动 sheet"。三条拖拽通道（轮播上拉 / 顶栏下拉 / 列表嵌套滚动）起手都要走它，
+     * 记下起点进度并清空测速状态。
+     */
+    fun markSheetDragging() {
+        if (sheetDragging) return
+        sheetDragging = true
+        sheetDragStartProgress = sheetProgress
+        sheetDragVelocity = 0f
+        sheetDragSampleTimeMs = 0L
+        sheetDragSampleProgress = sheetProgress
+    }
+
+    // 松手吸附：速度够大只看方向；否则看**相对起点**走了多远（见 SheetFlipThreshold）。
+    // velocity 为 px/s，向上为负。
     fun settleSheet(velocityPxPerSec: Float) {
+        val startedOpen = sheetDragStartProgress > 0.5f
         val target = when {
             velocityPxPerSec <= -SheetVelocityThreshold -> 1f
             velocityPxPerSec >= SheetVelocityThreshold -> 0f
-            sheetProgress > SheetPositionalThreshold -> 1f
-            else -> 0f
+            startedOpen -> if (sheetDragStartProgress - sheetProgress > SheetFlipThreshold) 0f else 1f
+            else -> if (sheetProgress - sheetDragStartProgress > SheetFlipThreshold) 1f else 0f
         }
         animateSheetTo(target, velocityPxPerSec)   // 把松手速度带进吸附动画，保留甩的动量
+    }
+
+    // ③ 三个入口，所有改 sheet 的地方都只走它们，杜绝散落各处的"挂载 + 动画"两步写法漏掉一步。
+    /** 点击打开：挂载内容并动画到全开。 */
+    fun openSheet(content: SheetContent) {
+        sheetContent = content
+        animateSheetTo(1f)
+    }
+
+    /** 手指开始拖：挂载内容、把意图置为打开，之后每帧由 dragSheetByRisePx 跟手驱动。 */
+    fun beginSheetDrag(content: SheetContent) {
+        sheetAnimJob?.cancel()
+        sheetAnimJob = null
+        sheetContent = content
+        sheetOpenTarget = true
+        markSheetDragging()
+    }
+
+    /**
+     * 手指松开：先落手指标记再吸附，两个状态在同一帧内更新完，卸载判定看到的是最终值。
+     * 手势自带的速度不可靠时（顶栏下拉恒为 0，原因见 sheetDragVelocity），退回用自测的进度速率。
+     */
+    fun endSheetDrag(velocityPxPerSec: Float) {
+        val measuredPxPerSec = -sheetDragVelocity * sheetTravelPx()
+        val effective =
+            if (kotlin.math.abs(velocityPxPerSec) >= kotlin.math.abs(measuredPxPerSec)) {
+                velocityPxPerSec
+            } else {
+                measuredPxPerSec
+            }
+        sheetDragging = false
+        settleSheet(effective)
+    }
+
+    /** 卸载的唯一入口：目标是关 + 进度已经到底 + 手指不在上面。与"动画有没有跑完"无关。 */
+    LaunchedEffect(Unit) {
+        snapshotFlow { !sheetOpenTarget && sheetProgress <= 0f && !sheetDragging }
+            .collect { shouldUnmount ->
+                if (shouldUnmount && sheetContent != null) sheetContent = null
+            }
     }
 
     // 详情列表的嵌套滚动：列表未到顶时上滑先喂给 sheet 继续打开；到顶后下滑的剩余量喂给 sheet 收起；
     // 松手（fling）交给 settleSheet 吸附。全部通过上面同一套函数改 sheetProgress，与拖拽/动画同源。
     val sheetNestedScroll = remember {
         object : NestedScrollConnection {
+            // onPreFling 已经带速度吸附过了就别让 onPostFling 再用 0 速度覆盖一次
+            private var settledInPreFling = false
+
             private fun consumeToSheet(dy: Float): Float {
                 val travel = sheetTravelPx()
                 if (travel <= 0f) return 0f
+                // 列表带着 sheet 走的这段也算"手指在驱动"，中途进度归零时不能把内容卸掉
+                markSheetDragging()
                 val before = sheetProgress
                 dragSheetByRisePx(-dy)   // 上滑 dy<0 → rise>0 打开；下滑 dy>0 → rise<0 收起
                 return -(sheetProgress - before) * travel   // 换回滚动坐标（向下为正）的已消费像素
@@ -384,17 +495,26 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
+                settledInPreFling = false
+                // scrollable 在每次拖拽结束时都会走到这里（哪怕速度为 0），拿它当"手指松开"的信号
+                sheetDragging = false
                 // 上甩且未完全打开：带速度吸附（开），并吃掉这段速度，别让列表再 fling。
                 return if (available.y < 0 && sheetProgress < 1f) {
-                    settleSheet(available.y); available
+                    settledInPreFling = true
+                    endSheetDrag(available.y); available
                 } else Velocity.Zero
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                // 只处理列表消费完后剩下的“向下”甩（列表已到顶）：带速度吸附（关）。上甩已由
-                // onPreFling 处理，这里不能再无条件 settle，否则会用速度 0 覆盖掉上面带速度的吸附。
-                return if (available.y > 0f) {
-                    settleSheet(available.y); available
+                sheetDragging = false
+                if (settledInPreFling) {
+                    settledInPreFling = false
+                    return Velocity.Zero
+                }
+                // 只要 sheet 停在中间就必须吸附，不能只在"向下甩"时才处理：慢慢往下拖再轻放手，
+                // 松手速度是 0，旧写法两个 fling 回调都不满足条件，sheet 就卡在半开位置不动了。
+                return if (sheetProgress > 0f && sheetProgress < 1f) {
+                    endSheetDrag(available.y); available
                 } else Velocity.Zero
             }
         }
@@ -612,8 +732,7 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                             },
                             onSelectAlbum = { album ->
                                 // 网格点击 / 非居中碟点击：挂载 sheet 内容并动画到完全打开。
-                                sheetContent = SheetContent.AlbumDetail(album)
-                                animateSheetTo(1f)
+                                openSheet(SheetContent.AlbumDetail(album))
                             },
                             onCreateAlbum = { album, serverConfigId ->
                                 val updated = albums + album
@@ -626,14 +745,8 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                                 albums = updated
                                 tech.xvanturing.musicdav.data.AlbumsRepository.save(context, updated)
                             },
-                            onOpenFavorites = {
-                                sheetContent = SheetContent.Favorites
-                                animateSheetTo(1f)
-                            },
-                            onOpenSearch = {
-                                sheetContent = SheetContent.Search
-                                animateSheetTo(1f)
-                            },
+                            onOpenFavorites = { openSheet(SheetContent.Favorites) },
+                            onOpenSearch = { openSheet(SheetContent.Search) },
                             playlistController = playlistController,
                             modifier = Modifier.fillMaxSize(),
                             selectedTabIndex = selectedTabIndex,
@@ -643,15 +756,15 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                             onCarouselPageChange = { carouselPage = it },
                             onAlbumSheetDragStart = { album ->
                                 // 轮播上拖专辑：挂载 sheet，随后每帧由 onSheetDrag 手指跟随驱动 sheetProgress。
-                                sheetContent = SheetContent.AlbumDetail(album)
+                                beginSheetDrag(SheetContent.AlbumDetail(album))
                             },
                             onFavoritesSheetDragStart = {
                                 // 轮播上拖收藏夹：与专辑走同一条手指跟随通道。
-                                sheetContent = SheetContent.Favorites
+                                beginSheetDrag(SheetContent.Favorites)
                             },
                             // dy 为每帧竖直位移（向上为负）；向上 = 上抬 = 更打开，故取 -dy 作上抬像素。
                             onSheetDrag = { dy -> dragSheetByRisePx(-dy) },
-                            onSheetDragEnd = { velocity -> settleSheet(velocity) }
+                            onSheetDragEnd = { velocity -> endSheetDrag(velocity) }
                         )
                     }
                     }
@@ -698,8 +811,8 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                                     // 网络请求。
                                     active = sheetFullyOpen,
                                     // 顶栏下拉走手指跟随：与轮播上拉/列表下拉同一套进度驱动与吸附
-                                    onSheetDrag = { dy -> dragSheetByRisePx(-dy) },
-                                    onSheetDragEnd = { velocity -> settleSheet(velocity) }
+                                    onSheetDrag = { dy -> markSheetDragging(); dragSheetByRisePx(-dy) },
+                                    onSheetDragEnd = { velocity -> endSheetDrag(velocity) }
                                 )
                             }
                         }
@@ -711,8 +824,8 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                                 modifier = Modifier.fillMaxSize(),
                                 bottomInset = contentBottomInset,
                                 active = sheetFullyOpen,
-                                onSheetDrag = { dy -> dragSheetByRisePx(-dy) },
-                                onSheetDragEnd = { velocity -> settleSheet(velocity) }
+                                onSheetDrag = { dy -> markSheetDragging(); dragSheetByRisePx(-dy) },
+                                onSheetDragEnd = { velocity -> endSheetDrag(velocity) }
                             )
                         }
 
@@ -723,8 +836,8 @@ fun MusicPlayerApp(modifier: Modifier = Modifier) {
                                 modifier = Modifier.fillMaxSize(),
                                 bottomInset = contentBottomInset,
                                 active = sheetFullyOpen,
-                                onSheetDrag = { dy -> dragSheetByRisePx(-dy) },
-                                onSheetDragEnd = { velocity -> settleSheet(velocity) }
+                                onSheetDrag = { dy -> markSheetDragging(); dragSheetByRisePx(-dy) },
+                                onSheetDragEnd = { velocity -> endSheetDrag(velocity) }
                             )
                         }
                     }
